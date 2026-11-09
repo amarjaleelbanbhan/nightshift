@@ -88,7 +88,8 @@ Implemented: `profile list`, `profile show <id>`, `profile apply <id>`,
 - [x] Docs: README, CHANGELOG, SECURITY.md, docs/CONFIGURATION-FORMATS.md updated. Version
       bumped to `0.2.0` in `package.json` (and lockfile synced via `npm install`, no dependency
       changes).
-- [ ] Commit, push, open PR against `main` (not merged) — next step.
+- [x] Committed (`56aa5b3`), pushed to `feat/nightshift-1.0-complete`, PR opened against `main`:
+      https://github.com/amarjaleelbanbhan/nightshift/pull/1 (not merged, awaiting review).
 
 ## Additional directive — modern CLI visual redesign
 

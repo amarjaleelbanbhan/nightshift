@@ -13,7 +13,8 @@ src/
 │       └── home.ts              `nightshift` with no args — @inquirer/prompts menu
 ├── core/
 │   ├── themes/                  schema (Zod), builtin themes, registry (builtin+user)
-│   ├── profiles/                schema (Zod), registry (bundled+user)
+│   ├── profiles/                schema (Zod, strict), registry (bundled+user, read-only),
+│   │                             manager (import/export/remove, mutating)
 │   ├── config/                  NIGHTSHIFT's own config.json: paths + read/write
 │   └── capabilities/            platform/terminal/Claude Code detection
 ├── adapters/

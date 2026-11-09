@@ -26,3 +26,7 @@ export function getUserThemesDir(): string {
 export function getBackupsDir(): string {
   return path.join(getNightshiftRoot(), "backups");
 }
+
+export function getUserProfilesDir(): string {
+  return path.join(getNightshiftRoot(), "profiles");
+}

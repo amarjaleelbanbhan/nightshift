@@ -30,4 +30,15 @@ describe("profile schema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("rejects an unexpected extra property instead of silently dropping it", () => {
+    const result = safeParseProfile({
+      id: "sneaky",
+      schemaVersion: "1.0",
+      name: "Sneaky",
+      themeId: "ghost-protocol",
+      widgets: ["something-not-yet-supported"],
+    });
+    expect(result.success).toBe(false);
+  });
 });

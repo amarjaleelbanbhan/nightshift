@@ -5,7 +5,7 @@ done" — if it's not checked off here with a commit hash, it isn't done.
 
 **Current branch:** `feat/nightshift-1.0-complete`
 **Baseline commit (main, 0.1.0):** `783787fb21299af5e68b2d37b25a32c5ceab7dff`
-**Current phase:** Phase 1 (Profile Manager) — in progress
+**Current phase:** Phase 1 (Profile Manager) — done; next up is the modern CLI visual redesign (see below)
 
 ## Why phases are not all attempted at once
 
@@ -51,23 +51,58 @@ Status: **Done** (this session, before Phase 1 commit)
 
 ## Phase 1 — 0.2.0 Profile Manager
 
-Status: **In progress**
+Status: **Done**
 
-Target commands: `profile list`, `profile show <id>`, `profile apply <id>`,
-`profile import <file>`, `profile export <id> [--output]`, `profile remove <id>`.
+Implemented: `profile list`, `profile show <id>`, `profile apply <id>`,
+`profile import <file> [--overwrite]`, `profile export <id> [--output] [--overwrite]`,
+`profile remove <id>`.
 
-- [ ] Extend `core/config/store.ts` with `activeProfileId` (backward-compatible with 0.1.0
-      config files missing the field).
-- [ ] `profile apply` reusing `applyThemeToWindowsTerminal` (no second theme engine).
-- [ ] `profile import` with size limit, schema validation, traversal/symlink protection,
-      duplicate/overwrite rules.
-- [ ] `profile export` with safe destination handling.
-- [ ] `profile remove` (user profiles only).
-- [ ] `profile show <id>`.
-- [ ] Interactive menu updated.
-- [ ] Tests: unit, import/export, apply integration, CLI.
-- [ ] Docs + CHANGELOG + version bump to 0.2.0.
-- [ ] Commit, push, open PR (not merged).
+- [x] Extended `core/config/store.ts` with `activeProfileId` (`.default(null)` — a 0.1.0
+      config file without the field loads fine, treated as `null`). `setActiveTheme` now
+      clears `activeProfileId`; new `setActiveProfileAndTheme` sets both atomically.
+- [x] `profile apply` reuses `applyThemeFileOnly` (extracted from the former
+      `applyThemeToWindowsTerminal`, which is now that function + a config-state update) — one
+      backup/verify/rollback implementation, not two. If the NIGHTSHIFT-config write fails
+      after the terminal write succeeded, the terminal backup is restored too.
+- [x] `profile import`: 64 KB size limit checked before parsing, strict Zod validation, theme-
+      existence check, traversal-safe destination via `resolveSafePath`, symlink-destination
+      rejection via `assertNotSymlink`, duplicate/`--overwrite` handling, built-in ids never
+      overwritable.
+- [x] `profile export`: safe destination handling, `--overwrite` protection, symlink check,
+      verified to never mutate active config.
+- [x] `profile remove`: user profiles only; clears `activeProfileId` if the removed profile
+      was active.
+- [x] `profile show <id>`.
+- [x] Registry extended (not re-implemented) to merge bundled + user profiles; a user profile
+      can never shadow a built-in id; `isBuiltinProfileId`/`inspectUserProfilesDirectory` added
+      for the import/remove guards and `doctor`.
+- [x] Profile schema made `.strict()` — unexpected fields now rejected, not dropped.
+- [x] Interactive menu: List/Apply/Import/Export/Remove/Back.
+- [x] `status`/`doctor` report active profile and user-profile-directory health.
+- [x] Tests: 40 new (unit: schema-strict, config backward-compat, registry anti-shadow;
+      integration: 21 import/export/remove cases, 5 apply cases including the config-write-
+      failure rollback path; CLI: show + end-to-end import/export/remove/apply via the built
+      binary with isolated `LOCALAPPDATA`/`APPDATA`). Full suite: **72/72 pass**, verified by
+      running `npm test` immediately before this commit (not a restated/assumed number).
+- [x] Typecheck, lint, build all pass after every change in this phase.
+- [x] Docs: README, CHANGELOG, SECURITY.md, docs/CONFIGURATION-FORMATS.md updated. Version
+      bumped to `0.2.0` in `package.json` (and lockfile synced via `npm install`, no dependency
+      changes).
+- [ ] Commit, push, open PR against `main` (not merged) — next step.
+
+## Additional directive — modern CLI visual redesign
+
+Received mid-Phase-1 (session 4): a design directive requesting a full TUI visual identity —
+design system, modern component library evaluation (Ink vs. @clack/prompts vs. current
+chalk+@inquirer/prompts), per-theme component styling, keyboard nav, resize handling.
+
+**Deliberately deferred to its own phase, after Phase 1 finishes**, for a concrete reason:
+Ink renders via a React component tree, which is a different execution model than our current
+print-and-exit commands. That's a real architectural decision — it also affects the existing
+CLI integration tests, which assert on plain stdout strings from the built binary. Evaluating
+it properly (not reflexively) means finishing the Profile Manager data/command layer first, so
+the redesign has stable commands to wire into rather than redesigning around functionality
+that's still changing underneath it.
 
 ## Phases 2–16
 

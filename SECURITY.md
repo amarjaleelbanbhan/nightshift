@@ -19,6 +19,16 @@ an issue if that's unavailable. Do not include exploit details in a public issue
 - Never executes code from a theme, profile, or any imported file. Themes and profiles are
   pure declarative JSON data — there is no script execution path.
 - Does not collect, log, or transmit telemetry, credentials, or environment variables.
+- Profile import (`profile import <file>`) enforces a 64 KB file-size limit before parsing,
+  rejects anything that isn't a regular file, requires the referenced theme to exist, rejects
+  unexpected JSON fields (strict schema), and will never let an imported file overwrite a
+  built-in profile id regardless of `--overwrite`. The write destination is checked for
+  symlinks before writing (`assertNotSymlink`).
+- Profile export never overwrites an existing destination file without `--overwrite`, checks
+  the destination isn't a symlink first, and never mutates NIGHTSHIFT's active-state config.
+- `profile apply`/`theme apply` restore the pre-apply backup not just when the terminal write
+  fails, but also when the subsequent NIGHTSHIFT config update fails — the two are never left
+  disagreeing with each other.
 
 ## Known limitations
 

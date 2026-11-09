@@ -4,7 +4,14 @@ import { version } from "./cli/version.js";
 import { runInit } from "./cli/commands/init.js";
 import { runStatus } from "./cli/commands/status.js";
 import { runThemeList, runThemePreview, runThemeApply } from "./cli/commands/theme.js";
-import { runProfileList } from "./cli/commands/profile.js";
+import {
+  runProfileList,
+  runProfileShow,
+  runProfileApply,
+  runProfileImport,
+  runProfileExport,
+  runProfileRemove,
+} from "./cli/commands/profile.js";
 import { runDoctor } from "./cli/commands/doctor.js";
 import { runBackupCreate, runBackupList, runRestore } from "./cli/commands/backup.js";
 import { runInteractiveHome } from "./cli/interactive/home.js";
@@ -39,6 +46,26 @@ theme
 
 const profile = program.command("profile").description("Manage profiles");
 profile.command("list").description("List available profiles").action(runProfileList);
+profile.command("show <id>").description("Show details for a profile").action(runProfileShow);
+profile
+  .command("apply <id>")
+  .description("Apply a profile's theme to Windows Terminal")
+  .action(runProfileApply);
+profile
+  .command("import <file>")
+  .description("Import a profile JSON file into NIGHTSHIFT's user profile directory")
+  .option("--overwrite", "replace an existing user profile with the same id")
+  .action((file, options: { overwrite?: boolean }) => runProfileImport(file, options));
+profile
+  .command("export <id>")
+  .description("Export a profile to a standalone JSON file")
+  .option("--output <path>", "destination file path")
+  .option("--overwrite", "replace an existing file at the destination")
+  .action((id, options: { output?: string; overwrite?: boolean }) => runProfileExport(id, options));
+profile
+  .command("remove <id>")
+  .description("Remove a user-imported profile")
+  .action(runProfileRemove);
 
 program
   .command("doctor")

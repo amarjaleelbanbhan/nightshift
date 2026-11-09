@@ -1,14 +1,19 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const cliEntry = path.resolve(__dirname, "../../dist/index.js");
 
-function runCli(args: string[]): { stdout: string; status: number } {
+function runCli(args: string[], env: Record<string, string | undefined> = process.env): {
+  stdout: string;
+  status: number;
+} {
   try {
-    const stdout = execFileSync(process.execPath, [cliEntry, ...args], { encoding: "utf8" });
+    const stdout = execFileSync(process.execPath, [cliEntry, ...args], { encoding: "utf8", env });
     return { stdout, status: 0 };
   } catch (error) {
     const e = error as { stdout?: string; status?: number };
@@ -61,5 +66,74 @@ describe("CLI (built dist/index.js)", () => {
     const { stdout, status } = runCli(["profile", "list"]);
     expect(status).toBe(0);
     expect(stdout).toContain("ghost-protocol-default");
+  });
+
+  it("shows a profile's details", () => {
+    const { stdout, status } = runCli(["profile", "show", "ghost-protocol-default"]);
+    expect(status).toBe(0);
+    expect(stdout).toContain("ghost-protocol-default");
+    expect(stdout).toContain("Ghost Protocol");
+  });
+
+  it("reports an error for an unknown profile id in show", () => {
+    const { status } = runCli(["profile", "show", "does-not-exist"]);
+    expect(status).not.toBe(0);
+  });
+});
+
+describe("CLI profile import/export/apply (isolated environment)", () => {
+  let tmpRoot: string;
+  let env: Record<string, string | undefined>;
+
+  beforeEach(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "nightshift-cli-profile-"));
+    const localAppData = path.join(tmpRoot, "LocalAppData");
+    const appData = path.join(tmpRoot, "AppData");
+    const pkgDir = path.join(
+      localAppData,
+      "Packages",
+      "Microsoft.WindowsTerminal_8wekyb3d8bbwe",
+      "LocalState",
+    );
+    fs.mkdirSync(pkgDir, { recursive: true });
+    fs.writeFileSync(path.join(pkgDir, "settings.json"), JSON.stringify({ profiles: { defaults: {} } }));
+
+    env = { ...process.env, LOCALAPPDATA: localAppData, APPDATA: appData };
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  it("imports, lists, exports, and removes a user profile end to end", () => {
+    const sourceFile = path.join(tmpRoot, "custom.json");
+    fs.writeFileSync(
+      sourceFile,
+      JSON.stringify({ id: "cli-custom", schemaVersion: "1.0", name: "CLI Custom", themeId: "redline" }),
+    );
+
+    const imported = runCli(["profile", "import", sourceFile], env);
+    expect(imported.status).toBe(0);
+
+    const listed = runCli(["profile", "list"], env);
+    expect(listed.stdout).toContain("cli-custom");
+
+    const exportPath = path.join(tmpRoot, "exported.json");
+    const exported = runCli(["profile", "export", "cli-custom", "--output", exportPath], env);
+    expect(exported.status).toBe(0);
+    expect(fs.existsSync(exportPath)).toBe(true);
+
+    const removed = runCli(["profile", "remove", "cli-custom"], env);
+    expect(removed.status).toBe(0);
+    expect(runCli(["profile", "list"], env).stdout).not.toContain("cli-custom");
+  });
+
+  it("applies a profile and reports it as active afterward", () => {
+    const applied = runCli(["profile", "apply", "ghost-protocol-default"], env);
+    expect(applied.status).toBe(0);
+    expect(applied.stdout).toContain("Ghost Protocol");
+
+    const status = runCli(["status"], env);
+    expect(status.stdout).toContain("Ghost Protocol");
   });
 });

@@ -1,173 +1,217 @@
-import { select, input } from "@inquirer/prompts";
 import chalk from "chalk";
-import { renderBanner } from "../../banners/startup.js";
-import { readConfig, isInitialized } from "../../core/config/store.js";
-import { getTheme, listThemes } from "../../core/themes/registry.js";
+import { renderMasthead } from "../../banners/startup.js";
+import { intro, outro, log, promptSelect, promptText } from "../ui/prompts.js";
+import { listThemes } from "../../core/themes/registry.js";
 import { listProfiles, getProfile } from "../../core/profiles/registry.js";
+import { getNightshiftRoot, getUserThemesDir, getUserProfilesDir, getBackupsDir } from "../../core/config/paths.js";
 import { runThemeList, runThemePreview, runThemeApply } from "../commands/theme.js";
 import {
-  runProfileList,
   runProfileApply,
   runProfileImport,
   runProfileExport,
   runProfileRemove,
 } from "../commands/profile.js";
+import { runProfileList } from "../commands/profile.js";
 import { runDoctor } from "../commands/doctor.js";
 import { runBackupCreate, runBackupList } from "../commands/backup.js";
+import { runStatus } from "../commands/status.js";
 
-const PLANNED = chalk.gray("(planned — not yet implemented)");
+const PLANNED = "This section is planned but not implemented yet.";
 
-type MenuChoice =
-  | "theme"
-  | "profile"
-  | "widgets"
-  | "ascii"
-  | "terminal"
-  | "claude"
-  | "marketplace"
-  | "doctor"
-  | "backup"
-  | "exit";
+type Section = "workspace" | "customization" | "integrations" | "system" | "exit";
 
 export async function runInteractiveHome(): Promise<void> {
-  const config = isInitialized() ? readConfig() : null;
-  const activeTheme = config?.activeThemeId ? getTheme(config.activeThemeId) : undefined;
-  console.log(renderBanner(activeTheme));
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    // An interactive select() prompt has nothing to read from in CI/pipes/redirected output
+    // and will hang waiting for input that will never arrive. Print the same status a
+    // real session would open with, then exit cleanly instead of hanging.
+    runStatus();
+    console.log();
+    console.log(chalk.gray("Non-interactive environment detected - run a specific command instead, e.g.:"));
+    console.log(chalk.gray("  nightshift theme list"));
+    console.log(chalk.gray("  nightshift profile list"));
+    console.log(chalk.gray("  nightshift doctor"));
+    return;
+  }
+
+  intro(chalk.bold(renderMasthead()));
+  runStatus();
 
   for (;;) {
-    const choice = await select<MenuChoice>({
-      message: "NIGHTSHIFT",
-      choices: [
-        { name: "Theme Manager", value: "theme" },
-        { name: "Profile Manager", value: "profile" },
-        { name: `Widget Center ${PLANNED}`, value: "widgets" },
-        { name: `ASCII Art Studio ${PLANNED}`, value: "ascii" },
-        { name: `Terminal Settings ${PLANNED.replace("not yet implemented", "use Theme Manager to apply")}`, value: "terminal" },
-        { name: `Claude Code Integration ${PLANNED}`, value: "claude" },
-        { name: `Marketplace ${PLANNED}`, value: "marketplace" },
-        { name: "Environment Doctor", value: "doctor" },
-        { name: "Backup and Restore", value: "backup" },
-        { name: "Exit", value: "exit" },
-      ],
-    });
+    const section = await promptSelect<Section>("NIGHTSHIFT", [
+      { label: "Workspace", value: "workspace", hint: "dashboard, doctor, quick actions" },
+      { label: "Customization", value: "customization", hint: "themes, profiles, ASCII art, widgets" },
+      { label: "Integrations", value: "integrations", hint: "terminal, shell, Claude Code" },
+      { label: "System", value: "system", hint: "setup, fonts, backups, settings" },
+      { label: "Exit", value: "exit" },
+    ]);
 
-    if (choice === "exit") return;
-    if (choice === "widgets" || choice === "ascii" || choice === "terminal" || choice === "claude" || choice === "marketplace") {
-      console.log(chalk.yellow("This section is planned but not implemented yet."));
-      continue;
-    }
-    if (choice === "profile") {
-      await runProfileMenu();
-      continue;
-    }
-    if (choice === "doctor") {
-      runDoctor();
-      continue;
-    }
-    if (choice === "backup") {
-      await runBackupMenu();
-      continue;
-    }
-    if (choice === "theme") {
-      await runThemeMenu();
-      continue;
-    }
+    if (!section || section === "exit") break;
+    if (section === "workspace") await runWorkspaceMenu();
+    if (section === "customization") await runCustomizationMenu();
+    if (section === "integrations") await runIntegrationsMenu();
+    if (section === "system") await runSystemMenu();
   }
+
+  outro("See you next session.");
+}
+
+async function runWorkspaceMenu(): Promise<void> {
+  const choice = await promptSelect("Workspace", [
+    { label: "Dashboard", value: "dashboard", hint: "re-show current status" },
+    { label: "Environment Doctor", value: "doctor" },
+    { label: "Quick action: apply a theme", value: "quick-apply" },
+    { label: "Back", value: "back" },
+  ]);
+  if (!choice || choice === "back") return;
+  if (choice === "dashboard") runStatus();
+  if (choice === "doctor") runDoctor();
+  if (choice === "quick-apply") await applyThemeInteractive();
+}
+
+async function runCustomizationMenu(): Promise<void> {
+  const choice = await promptSelect("Customization", [
+    { label: "Theme Studio", value: "theme" },
+    { label: "Profile Manager", value: "profile" },
+    { label: "ASCII Art Studio", value: "ascii", hint: "planned" },
+    { label: "Widgets", value: "widgets", hint: "planned" },
+    { label: "Back", value: "back" },
+  ]);
+  if (!choice || choice === "back") return;
+  if (choice === "theme") await runThemeMenu();
+  if (choice === "profile") await runProfileMenu();
+  if (choice === "ascii" || choice === "widgets") log.warn(PLANNED);
+}
+
+async function runIntegrationsMenu(): Promise<void> {
+  const choice = await promptSelect("Integrations", [
+    { label: "Terminal Manager", value: "terminal", hint: "planned — use Theme Studio to apply colors today" },
+    { label: "Shell Manager", value: "shell", hint: "planned" },
+    { label: "Claude Code", value: "claude", hint: "planned" },
+    { label: "Back", value: "back" },
+  ]);
+  if (!choice || choice === "back") return;
+  log.warn(PLANNED);
+}
+
+async function runSystemMenu(): Promise<void> {
+  const choice = await promptSelect("System", [
+    { label: "Setup", value: "setup", hint: "planned" },
+    { label: "Fonts", value: "fonts", hint: "planned" },
+    { label: "Backups", value: "backups" },
+    { label: "Settings", value: "settings" },
+    { label: "Back", value: "back" },
+  ]);
+  if (!choice || choice === "back") return;
+  if (choice === "backups") await runBackupMenu();
+  if (choice === "settings") runSettings();
+  if (choice === "setup" || choice === "fonts") log.warn(PLANNED);
+}
+
+function runSettings(): void {
+  log.info(
+    [
+      `Config directory:  ${getNightshiftRoot()}`,
+      `User themes:       ${getUserThemesDir()}`,
+      `User profiles:     ${getUserProfilesDir()}`,
+      `Backups:           ${getBackupsDir()}`,
+    ].join("\n"),
+  );
+}
+
+async function applyThemeInteractive(): Promise<void> {
+  const themeId = await promptSelect(
+    "Apply which theme?",
+    listThemes().map(({ theme }) => ({ label: theme.name, value: theme.id })),
+  );
+  if (!themeId) return;
+  runThemeApply(themeId);
 }
 
 async function runThemeMenu(): Promise<void> {
-  const action = await select({
-    message: "Theme Manager",
-    choices: [
-      { name: "List themes", value: "list" },
-      { name: "Preview a theme", value: "preview" },
-      { name: "Apply a theme", value: "apply" },
-      { name: "Back", value: "back" },
-    ],
-  });
-  if (action === "back") return;
+  const action = await promptSelect("Theme Studio", [
+    { label: "List themes", value: "list" },
+    { label: "Preview a theme", value: "preview" },
+    { label: "Apply a theme", value: "apply" },
+    { label: "Back", value: "back" },
+  ]);
+  if (!action || action === "back") return;
   if (action === "list") {
     runThemeList();
     return;
   }
-  const themeId = await select({
-    message: action === "preview" ? "Preview which theme?" : "Apply which theme?",
-    choices: listThemes().map(({ theme }) => ({ name: theme.name, value: theme.id })),
-  });
+  const themeId = await promptSelect(
+    action === "preview" ? "Preview which theme?" : "Apply which theme?",
+    listThemes().map(({ theme }) => ({ label: theme.name, value: theme.id })),
+  );
+  if (!themeId) return;
   if (action === "preview") runThemePreview(themeId);
   if (action === "apply") runThemeApply(themeId);
 }
 
 async function runProfileMenu(): Promise<void> {
-  const action = await select({
-    message: "Profile Manager",
-    choices: [
-      { name: "List profiles", value: "list" },
-      { name: "Apply a profile", value: "apply" },
-      { name: "Import a profile", value: "import" },
-      { name: "Export a profile", value: "export" },
-      { name: "Remove a user profile", value: "remove" },
-      { name: "Back", value: "back" },
-    ],
-  });
+  const action = await promptSelect("Profile Manager", [
+    { label: "List profiles", value: "list" },
+    { label: "Apply a profile", value: "apply" },
+    { label: "Import a profile", value: "import" },
+    { label: "Export a profile", value: "export" },
+    { label: "Remove a user profile", value: "remove" },
+    { label: "Back", value: "back" },
+  ]);
 
-  if (action === "back") return;
+  if (!action || action === "back") return;
   if (action === "list") {
     runProfileList();
     return;
   }
 
   if (action === "import") {
-    const file = await input({ message: "Path to the profile JSON file to import:" });
+    const file = await promptText("Path to the profile JSON file to import:");
+    if (!file) return;
     runProfileImport(file, {});
     return;
   }
 
-  if (action === "apply" || action === "export" || action === "remove") {
-    const entries = action === "remove" ? listProfiles().filter((e) => e.source === "user") : listProfiles();
-    if (entries.length === 0) {
-      console.log(chalk.gray(action === "remove" ? "No user profiles to remove." : "No profiles found."));
-      return;
-    }
-    const profileId = await select({
-      message: `${action === "apply" ? "Apply" : action === "export" ? "Export" : "Remove"} which profile?`,
-      choices: entries.map(({ profile }) => ({ name: profile.name, value: profile.id })),
-    });
-
-    if (action === "apply") {
-      const entry = getProfile(profileId);
-      const theme = entry ? getTheme(entry.profile.themeId) : undefined;
-      console.log(chalk.gray(`This will apply theme "${entry?.profile.themeId}"${theme ? ` (${theme.name})` : " (not found!)"}.`));
-      const confirmed = await select({
-        message: "Apply now?",
-        choices: [
-          { name: "Yes, apply", value: "yes" },
-          { name: "No, cancel", value: "no" },
-        ],
-      });
-      if (confirmed === "yes") runProfileApply(profileId);
-      return;
-    }
-
-    if (action === "export") {
-      const output = await input({ message: "Destination path (leave blank for default):" });
-      runProfileExport(profileId, { output: output || undefined });
-      return;
-    }
-
-    runProfileRemove(profileId);
+  const entries = action === "remove" ? listProfiles().filter((e) => e.source === "user") : listProfiles();
+  if (entries.length === 0) {
+    log.info(action === "remove" ? "No user profiles to remove." : "No profiles found.");
+    return;
   }
+  const profileId = await promptSelect(
+    `${action === "apply" ? "Apply" : action === "export" ? "Export" : "Remove"} which profile?`,
+    entries.map(({ profile }) => ({ label: profile.name, value: profile.id })),
+  );
+  if (!profileId) return;
+
+  if (action === "apply") {
+    const entry = getProfile(profileId);
+    const confirmed = await promptSelect(
+      `Apply "${entry?.profile.name}" (theme: ${entry?.profile.themeId})?`,
+      [
+        { label: "Yes, apply", value: "yes" },
+        { label: "No, cancel", value: "no" },
+      ],
+    );
+    if (confirmed === "yes") runProfileApply(profileId);
+    return;
+  }
+
+  if (action === "export") {
+    const output = await promptText("Destination path (leave blank for default):");
+    if (output === null) return;
+    runProfileExport(profileId, { output: output || undefined });
+    return;
+  }
+
+  runProfileRemove(profileId);
 }
 
 async function runBackupMenu(): Promise<void> {
-  const action = await select({
-    message: "Backup and Restore",
-    choices: [
-      { name: "Create backup of Windows Terminal settings", value: "create" },
-      { name: "List backups", value: "list" },
-      { name: "Back", value: "back" },
-    ],
-  });
+  const action = await promptSelect("Backups", [
+    { label: "Create backup of Windows Terminal settings", value: "create" },
+    { label: "List backups", value: "list" },
+    { label: "Back", value: "back" },
+  ]);
   if (action === "create") runBackupCreate();
   if (action === "list") runBackupList();
 }

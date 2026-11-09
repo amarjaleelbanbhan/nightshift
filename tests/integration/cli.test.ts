@@ -68,6 +68,17 @@ describe("CLI (built dist/index.js)", () => {
     expect(stdout).toContain("ghost-protocol-default");
   });
 
+  it("exits promptly instead of hanging when run with no args in a non-TTY context", () => {
+    const start = Date.now();
+    const stdout = execFileSync(process.execPath, [cliEntry], {
+      encoding: "utf8",
+      input: "",
+      timeout: 5000,
+    });
+    expect(Date.now() - start).toBeLessThan(5000);
+    expect(stdout).toContain("Non-interactive environment detected");
+  });
+
   it("shows a profile's details", () => {
     const { stdout, status } = runCli(["profile", "show", "ghost-protocol-default"]);
     expect(status).toBe(0);

@@ -1,23 +1,21 @@
 import chalk from "chalk";
 import type { Theme } from "../core/themes/schema.js";
-
-const LOGO = [
-  " _  _ _ ____ _  _ ___ ____ _  _ _ ____ ___ ",
-  " |\\ | | |__| |__|  |  [__] |__| | |___  |  ",
-];
+import { getSemanticColors } from "../cli/ui/colors.js";
+import { panel } from "../cli/ui/panel.js";
+import { version } from "../cli/version.js";
 
 /**
- * Renders the static startup banner. The ASCII Art Studio (custom/imported
- * banners) is a planned feature, not yet built — this is intentionally a
- * single fixed logo rather than a font-rendering engine.
+ * A compact themed identity panel for one-shot command output (`status`). Deliberately not a
+ * blocky ASCII wordmark - "NIGHTSHIFT" is already a short, readable word; a letter-art banner
+ * adds nothing but the exact generic-terminal-tool look this product is meant to avoid.
  */
-export function renderBanner(activeTheme?: Theme): string {
-  const accent = activeTheme?.colors.primary ?? "#65E58B";
-  const color = chalk.hex(accent);
-  return [
-    "",
-    ...LOGO.map((line) => color.bold(line)),
-    chalk.gray("Your terminal. Your identity."),
-    "",
-  ].join("\n");
+export function renderStatusPanel(activeTheme?: Theme): string {
+  const colors = getSemanticColors(activeTheme);
+  const content = `${colors.primary.bold("NIGHTSHIFT")} ${chalk.gray(`v${version}`)}\n${chalk.gray("Your terminal. Your identity.")}`;
+  return panel(content, { borderColorHex: colors.primaryHex });
+}
+
+/** A short title string for @clack/prompts' intro() - the interactive session uses clack's own bordered header instead of a separate banner, so the two don't visually compete. */
+export function renderMasthead(): string {
+  return `NIGHTSHIFT v${version} — Your terminal. Your identity.`;
 }

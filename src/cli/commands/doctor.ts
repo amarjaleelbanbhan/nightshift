@@ -3,6 +3,7 @@ import process from "node:process";
 import { detectCapabilities } from "../../core/capabilities/detect.js";
 import { isInitialized } from "../../core/config/store.js";
 import { inspectUserProfilesDirectory } from "../../core/profiles/registry.js";
+import { renderTable } from "../ui/table.js";
 
 interface Check {
   label: string;
@@ -67,12 +68,16 @@ export function runDoctor(): void {
   });
 
   console.log(chalk.bold("NIGHTSHIFT Environment Doctor"));
-  console.log();
-  for (const check of checks) {
-    const icon =
-      check.status === "ok" ? chalk.green("✓") : check.status === "warn" ? chalk.yellow("!") : chalk.red("✗");
-    console.log(`${icon} ${check.label.padEnd(20)} ${chalk.gray(check.detail)}`);
-  }
+  console.log(
+    renderTable(
+      ["", "Check", "Detail"],
+      checks.map((check) => [
+        check.status === "ok" ? chalk.green("✓") : check.status === "warn" ? chalk.yellow("!") : chalk.red("✗"),
+        check.label,
+        chalk.gray(check.detail),
+      ]),
+    ),
+  );
 
   if (checks.some((c) => c.status === "fail")) {
     process.exitCode = 1;

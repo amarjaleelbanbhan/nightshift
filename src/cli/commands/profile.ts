@@ -10,6 +10,7 @@ import {
 } from "../../core/config/store.js";
 import { restoreBackup } from "../../backup/manager.js";
 import { applyThemeFileOnly, type ApplyResult } from "./theme.js";
+import { renderTable } from "../ui/table.js";
 
 export function runProfileList(): void {
   const profiles = listProfiles();
@@ -19,16 +20,24 @@ export function runProfileList(): void {
   }
   const activeProfileId = isInitialized() ? readConfig().activeProfileId : null;
 
-  console.log(chalk.bold("Available profiles:"));
-  for (const { profile, source } of profiles) {
-    const theme = getTheme(profile.themeId);
-    const active = profile.id === activeProfileId ? chalk.green(" (active)") : "";
-    console.log(`  ${chalk.cyan(profile.id.padEnd(24))} ${profile.name}${active} ${chalk.gray(`(${source})`)}`);
-    if (profile.description) console.log(`  ${" ".repeat(24)} ${chalk.gray(profile.description)}`);
-    console.log(
-      `  ${" ".repeat(24)} ${chalk.gray(`theme: ${profile.themeId}${theme ? "" : " (missing!)"}`)}`,
-    );
-  }
+  console.log(
+    renderTable(
+      ["ID", "Name", "Theme", "Source"],
+      profiles.map(({ profile, source }) => {
+        const theme = getTheme(profile.themeId);
+        const activeTag = profile.id === activeProfileId ? ` ${chalk.green("(active)")}` : "";
+        const name = profile.description
+          ? `${profile.name}${activeTag}\n${chalk.gray(profile.description)}`
+          : `${profile.name}${activeTag}`;
+        return [
+          chalk.cyan(profile.id),
+          name,
+          theme ? theme.name : chalk.red(`${profile.themeId} (missing!)`),
+          chalk.gray(source),
+        ];
+      }),
+    ),
+  );
 }
 
 export function runProfileShow(id: string): void {

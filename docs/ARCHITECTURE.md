@@ -9,8 +9,12 @@ src/
 │   ├── version.ts               reads version from package.json at runtime
 │   ├── commands/                one file per command group; pure-ish functions
 │   │   └── *.ts                 that print to console and set process.exitCode
-│   └── interactive/
-│       └── home.ts              `nightshift` with no args — @inquirer/prompts menu
+│   ├── interactive/
+│   │   └── home.ts              `nightshift` with no args — @clack/prompts grouped menu
+│   └── ui/                      design system: colors.ts (theme-aware semantic tokens),
+│                                 table.ts (cli-table3, terminal-width-aware), panel.ts
+│                                 (boxen, for one-shot command headers), prompts.ts
+│                                 (@clack/prompts wrapper with uniform cancel handling)
 ├── core/
 │   ├── themes/                  schema (Zod), builtin themes, registry (builtin+user)
 │   ├── profiles/                schema (Zod, strict), registry (bundled+user, read-only),
@@ -22,7 +26,7 @@ src/
 ├── backup/                      generic file-snapshot backup/restore
 ├── security/                    resolveSafePath, assertNotSymlink
 ├── utils/                       atomicWriteFileSync
-└── banners/                     static startup banner
+└── banners/                     themed status panel + clack intro masthead
 ```
 
 ## Why this shape
@@ -46,6 +50,16 @@ src/
   pattern is reused rather than re-invented for any future asset type (banners, widget packs).
 - **No background process.** Every command is a one-shot `node` invocation. Widgets (planned)
   must compute on demand, not via a daemon.
+- **`cli/ui/` is the only place that imports `@clack/prompts`, `cli-table3`, or `boxen`
+  directly.** Commands call `renderTable`/`panel`/`promptSelect` etc. rather than the raw
+  libraries, so a future rendering-library swap (if one is ever justified) touches one module,
+  not every command file.
+- **`runInteractiveHome()` checks `process.stdin.isTTY && process.stdout.isTTY` before
+  entering any prompt.** An interactive `select()` call has nothing to read from in CI/pipes/
+  redirected output and will hang waiting for input that never arrives — confirmed by actually
+  running it non-interactively during development (it hung until a wrapper timeout killed it)
+  before this guard was added. Non-interactive invocations print the same status a real session
+  opens with, then return.
 
 ## What's deliberately NOT abstracted yet
 

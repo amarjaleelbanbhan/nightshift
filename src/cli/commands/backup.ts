@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import { createBackup, listBackups, restoreBackup } from "../../backup/manager.js";
 import { detectCapabilities } from "../../core/capabilities/detect.js";
+import { renderTable } from "../ui/table.js";
 
 export function runBackupCreate(): void {
   const caps = detectCapabilities();
@@ -21,12 +22,17 @@ export function runBackupList(): void {
     console.log(chalk.gray("No backups found."));
     return;
   }
-  console.log(chalk.bold("Backups (newest first):"));
-  for (const backup of backups) {
-    console.log(`  ${chalk.cyan(backup.id)}`);
-    console.log(`    ${chalk.gray(`${backup.createdAt} — ${backup.reason}`)}`);
-    console.log(`    ${chalk.gray(backup.originalPath)}`);
-  }
+  console.log(
+    renderTable(
+      ["ID", "Created", "Reason", "Source"],
+      backups.map((backup) => [
+        chalk.cyan(backup.id),
+        backup.createdAt,
+        backup.reason,
+        chalk.gray(backup.originalPath),
+      ]),
+    ),
+  );
 }
 
 export function runRestore(backupId: string): void {

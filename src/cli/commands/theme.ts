@@ -1,21 +1,29 @@
 import chalk from "chalk";
 import { listThemes, getTheme } from "../../core/themes/registry.js";
 import { detectCapabilities } from "../../core/capabilities/detect.js";
-import { setActiveTheme, isInitialized, initializeConfig } from "../../core/config/store.js";
+import { setActiveTheme, isInitialized, initializeConfig, readConfig } from "../../core/config/store.js";
 import { createBackup, restoreBackup } from "../../backup/manager.js";
 import {
   readWindowsTerminalSettings,
   writeWindowsTerminalSettings,
   mergeThemeIntoSettings,
 } from "../../adapters/windows-terminal/apply.js";
+import { renderTable } from "../ui/table.js";
 
 export function runThemeList(): void {
   const entries = listThemes();
-  console.log(chalk.bold("Available themes:"));
-  for (const { theme, source } of entries) {
-    console.log(`  ${chalk.cyan(theme.id.padEnd(16))} ${theme.name} ${chalk.gray(`(${source})`)}`);
-    if (theme.description) console.log(`  ${" ".repeat(16)} ${chalk.gray(theme.description)}`);
-  }
+  const activeThemeId = isInitialized() ? readConfig().activeThemeId : null;
+
+  console.log(
+    renderTable(
+      ["", "ID", "Name", "Source"],
+      entries.map(({ theme, source }) => {
+        const activeTag = theme.id === activeThemeId ? ` ${chalk.green("(active)")}` : "";
+        const name = theme.description ? `${theme.name}${activeTag}\n${chalk.gray(theme.description)}` : `${theme.name}${activeTag}`;
+        return [chalk.hex(theme.colors.primary)("■"), chalk.cyan(theme.id), name, chalk.gray(source)];
+      }),
+    ),
+  );
 }
 
 export function runThemePreview(id: string): void {

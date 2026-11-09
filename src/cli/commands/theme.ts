@@ -46,15 +46,16 @@ export function runThemePreview(id: string): void {
 export interface ApplyResult {
   ok: boolean;
   message: string;
+  backupId?: string | undefined;
 }
 
 /**
- * Applies a theme to Windows Terminal following the discover -> validate ->
- * detect -> backup -> apply -> verify -> report sequence: a failed
- * verification restores the pre-apply backup instead of leaving a
- * half-written settings.json.
+ * Backs up, merges, writes, and verifies a theme against Windows Terminal's settings.json -
+ * without touching NIGHTSHIFT's own active-state config. Exported so profile apply (see
+ * src/cli/commands/profile.ts) reuses this exact backup/verify/rollback engine instead of
+ * a second implementation.
  */
-export function applyThemeToWindowsTerminal(id: string): ApplyResult {
+export function applyThemeFileOnly(id: string): ApplyResult {
   const theme = getTheme(id);
   if (!theme) {
     return { ok: false, message: `No theme found with id "${id}".` };
@@ -71,7 +72,12 @@ export function applyThemeToWindowsTerminal(id: string): ApplyResult {
     };
   }
 
-  const backup = createBackup(settingsPath, `apply theme ${theme.id}`);
+  let backup: ReturnType<typeof createBackup>;
+  try {
+    backup = createBackup(settingsPath, `apply theme ${theme.id}`);
+  } catch (error) {
+    return { ok: false, message: `Failed to create a backup before applying the theme: ${(error as Error).message}` };
+  }
 
   try {
     const current = readWindowsTerminalSettings(settingsPath);
@@ -97,12 +103,44 @@ export function applyThemeToWindowsTerminal(id: string): ApplyResult {
     };
   }
 
-  if (!isInitialized()) initializeConfig();
-  setActiveTheme(theme.id);
+  return {
+    ok: true,
+    message: `Applied "${theme.name}" to Windows Terminal (${settingsPath}).`,
+    backupId: backup.id,
+  };
+}
+
+/**
+ * Applies a theme to Windows Terminal following the discover -> validate ->
+ * detect -> backup -> apply -> verify -> report sequence, then persists it as
+ * NIGHTSHIFT's active theme. If the config update itself fails, the terminal
+ * backup is restored too, so the two never end up out of sync.
+ */
+export function applyThemeToWindowsTerminal(id: string): ApplyResult {
+  const fileResult = applyThemeFileOnly(id);
+  if (!fileResult.ok) return fileResult;
+
+  try {
+    if (!isInitialized()) initializeConfig();
+    setActiveTheme(id);
+  } catch (error) {
+    if (fileResult.backupId) {
+      try {
+        restoreBackup(fileResult.backupId);
+      } catch {
+        // Best effort - the original error is still reported below.
+      }
+    }
+    return {
+      ok: false,
+      message: `Theme was applied but updating NIGHTSHIFT's configuration failed, so the previous terminal settings were restored: ${(error as Error).message}`,
+    };
+  }
 
   return {
     ok: true,
-    message: `Applied "${theme.name}" to Windows Terminal (${settingsPath}). Backup id: ${backup.id}.`,
+    message: `${fileResult.message} Backup id: ${fileResult.backupId}.`,
+    backupId: fileResult.backupId,
   };
 }
 

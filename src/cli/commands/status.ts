@@ -3,6 +3,7 @@ import os from "node:os";
 import { readConfig, isInitialized } from "../../core/config/store.js";
 import { detectCapabilities } from "../../core/capabilities/detect.js";
 import { getTheme } from "../../core/themes/registry.js";
+import { getProfile } from "../../core/profiles/registry.js";
 import { version } from "../version.js";
 import { renderBanner } from "../../banners/startup.js";
 
@@ -25,6 +26,10 @@ export function runStatus(): void {
   );
   console.log(
     `${chalk.gray("Active theme:")}   ${activeTheme ? activeTheme.name : chalk.gray("none")}`,
+  );
+  const activeProfile = config?.activeProfileId ? getProfile(config.activeProfileId) : undefined;
+  console.log(
+    `${chalk.gray("Active profile:")} ${activeProfile ? activeProfile.profile.name : chalk.gray("none")}`,
   );
 }
 

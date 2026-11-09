@@ -2,6 +2,7 @@ import chalk from "chalk";
 import process from "node:process";
 import { detectCapabilities } from "../../core/capabilities/detect.js";
 import { isInitialized } from "../../core/config/store.js";
+import { inspectUserProfilesDirectory } from "../../core/profiles/registry.js";
 
 interface Check {
   label: string;
@@ -50,6 +51,19 @@ export function runDoctor(): void {
     label: "NIGHTSHIFT config",
     status: isInitialized() ? "ok" : "warn",
     detail: isInitialized() ? "initialized" : "not initialized, run `nightshift init`",
+  });
+
+  const userProfiles = inspectUserProfilesDirectory();
+  checks.push({
+    label: "User profiles",
+    status: userProfiles.invalid.length > 0 ? "warn" : "ok",
+    detail: userProfiles.exists
+      ? `${userProfiles.path} - ${userProfiles.validCount} valid${
+          userProfiles.invalid.length > 0
+            ? `, ${userProfiles.invalid.length} invalid (${userProfiles.invalid.map((i) => `${i.file}: ${i.reason}`).join("; ")})`
+            : ""
+        }`
+      : `${userProfiles.path} (not created yet)`,
   });
 
   console.log(chalk.bold("NIGHTSHIFT Environment Doctor"));

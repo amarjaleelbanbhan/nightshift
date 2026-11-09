@@ -1,0 +1,117 @@
+import chalk from "chalk";
+import { listThemes, getTheme } from "../../core/themes/registry.js";
+import { detectCapabilities } from "../../core/capabilities/detect.js";
+import { setActiveTheme, isInitialized, initializeConfig } from "../../core/config/store.js";
+import { createBackup, restoreBackup } from "../../backup/manager.js";
+import {
+  readWindowsTerminalSettings,
+  writeWindowsTerminalSettings,
+  mergeThemeIntoSettings,
+} from "../../adapters/windows-terminal/apply.js";
+
+export function runThemeList(): void {
+  const entries = listThemes();
+  console.log(chalk.bold("Available themes:"));
+  for (const { theme, source } of entries) {
+    console.log(`  ${chalk.cyan(theme.id.padEnd(16))} ${theme.name} ${chalk.gray(`(${source})`)}`);
+    if (theme.description) console.log(`  ${" ".repeat(16)} ${chalk.gray(theme.description)}`);
+  }
+}
+
+export function runThemePreview(id: string): void {
+  const theme = getTheme(id);
+  if (!theme) {
+    console.error(chalk.red(`No theme found with id "${id}". Run \`nightshift theme list\`.`));
+    process.exitCode = 1;
+    return;
+  }
+
+  const swatch = (hex: string, label: string) => chalk.bgHex(hex).hex("#000000")(` ${label} `);
+  console.log(chalk.bold(theme.name));
+  if (theme.description) console.log(chalk.gray(theme.description));
+  console.log();
+  console.log(
+    [
+      swatch(theme.colors.background, "bg"),
+      swatch(theme.colors.foreground, "fg"),
+      swatch(theme.colors.primary, "primary"),
+      swatch(theme.colors.secondary, "secondary"),
+      swatch(theme.colors.success, "success"),
+      swatch(theme.colors.warning, "warning"),
+      swatch(theme.colors.error, "error"),
+    ].join(" "),
+  );
+}
+
+export interface ApplyResult {
+  ok: boolean;
+  message: string;
+}
+
+/**
+ * Applies a theme to Windows Terminal following the discover -> validate ->
+ * detect -> backup -> apply -> verify -> report sequence: a failed
+ * verification restores the pre-apply backup instead of leaving a
+ * half-written settings.json.
+ */
+export function applyThemeToWindowsTerminal(id: string): ApplyResult {
+  const theme = getTheme(id);
+  if (!theme) {
+    return { ok: false, message: `No theme found with id "${id}".` };
+  }
+
+  const caps = detectCapabilities();
+  const settingsPath = caps.windowsTerminal.settingsPath;
+  if (!settingsPath) {
+    return {
+      ok: false,
+      message:
+        "Windows Terminal settings.json was not found. Is Windows Terminal installed? " +
+        "(Theme application is currently Windows-only.)",
+    };
+  }
+
+  const backup = createBackup(settingsPath, `apply theme ${theme.id}`);
+
+  try {
+    const current = readWindowsTerminalSettings(settingsPath);
+    const merged = mergeThemeIntoSettings(current, theme);
+    writeWindowsTerminalSettings(settingsPath, merged);
+
+    const verification = readWindowsTerminalSettings(settingsPath);
+    const schemes = verification.schemes;
+    const applied = Array.isArray(schemes) && schemes.some((s) => s?.name === theme.name);
+    if (!applied) {
+      throw new Error("verification failed: color scheme not present after write");
+    }
+  } catch (error) {
+    // Roll back on any failure so the user's settings.json is never left broken.
+    try {
+      restoreBackup(backup.id);
+    } catch {
+      // If restore itself fails, surface the original error below.
+    }
+    return {
+      ok: false,
+      message: `Failed to apply theme and restored previous settings: ${(error as Error).message}`,
+    };
+  }
+
+  if (!isInitialized()) initializeConfig();
+  setActiveTheme(theme.id);
+
+  return {
+    ok: true,
+    message: `Applied "${theme.name}" to Windows Terminal (${settingsPath}). Backup id: ${backup.id}.`,
+  };
+}
+
+export function runThemeApply(id: string): void {
+  const result = applyThemeToWindowsTerminal(id);
+  if (result.ok) {
+    console.log(chalk.green(result.message));
+  } else {
+    console.error(chalk.red(result.message));
+    process.exitCode = 1;
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "id": "monolith-default",
+  "schemaVersion": "1.0",
+  "name": "Monolith (Default)",
+  "description": "The default profile built around the Monolith theme.",
+  "themeId": "monolith"
+}

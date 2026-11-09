@@ -1,0 +1,7 @@
+{
+  "id": "ghost-protocol-default",
+  "schemaVersion": "1.0",
+  "name": "Ghost Protocol (Default)",
+  "description": "The default profile built around the Ghost Protocol theme.",
+  "themeId": "ghost-protocol"
+}

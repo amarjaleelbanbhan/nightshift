@@ -58,8 +58,20 @@ npm run build          # exit 0
 npm test               # all tests pass, zero failures
 ```
 
-**The test count is a floor and may only rise.** It was 73 at commit `813c7c9` and is 268 now.
+**The test count is a floor and may only rise.** It was 73 at commit `813c7c9` and is 462 now.
 A release whose suite shrank is a release that deleted a test.
+
+## 3a. Real-TTY checklist — the gate no CI job can run
+
+- [ ] **`docs/development/TTY_CHECKLIST.md` completed by a human in Windows Terminal**, against
+      the built artifact, with the date and both version numbers recorded in the release PR.
+
+`@clack/prompts` does not render without a TTY, and two shipped defects (the constant +2 table
+overflow, and `NO_COLOR` doing nothing) were invisible in piped output and only ever appeared in
+a real terminal. Menu *dispatch* and the `process.exitCode` reset are automated in
+`tests/unit/interactive-home.test.ts` and must not be re-checked by hand; what the checklist
+covers is rendering, terminal-state restoration on cancel, geometry at ~40 columns, and the
+write-surface commands no suite runs against a live installation (#13).
 
 ## 4. Security audit
 

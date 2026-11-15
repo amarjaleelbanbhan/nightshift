@@ -1,5 +1,6 @@
 import chalk, { type ChalkInstance } from "chalk";
 import type { Theme } from "../../core/themes/schema.js";
+import "./color-mode.js";
 
 export interface SemanticColors {
   primary: ChalkInstance;

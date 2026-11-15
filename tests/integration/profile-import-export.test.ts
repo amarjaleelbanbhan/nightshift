@@ -37,7 +37,12 @@ describe("profile import", () => {
     const file = writeSourceFile(
       sourceDir,
       "ok.json",
-      JSON.stringify({ id: "my-profile", schemaVersion: "1.0", name: "My Profile", themeId: "ghost-protocol" }),
+      JSON.stringify({
+        id: "my-profile",
+        schemaVersion: "1.0",
+        name: "My Profile",
+        themeId: "ghost-protocol",
+      }),
     );
     const result = importProfile(file);
     expect(result.ok).toBe(true);
@@ -50,7 +55,11 @@ describe("profile import", () => {
   });
 
   it("rejects a profile missing required fields", () => {
-    const file = writeSourceFile(sourceDir, "missing.json", JSON.stringify({ id: "bad", schemaVersion: "1.0" }));
+    const file = writeSourceFile(
+      sourceDir,
+      "missing.json",
+      JSON.stringify({ id: "bad", schemaVersion: "1.0" }),
+    );
     expect(importProfile(file).ok).toBe(false);
   });
 
@@ -58,7 +67,12 @@ describe("profile import", () => {
     const file = writeSourceFile(
       sourceDir,
       "badid.json",
-      JSON.stringify({ id: "Not Valid!", schemaVersion: "1.0", name: "x", themeId: "ghost-protocol" }),
+      JSON.stringify({
+        id: "Not Valid!",
+        schemaVersion: "1.0",
+        name: "x",
+        themeId: "ghost-protocol",
+      }),
     );
     expect(importProfile(file).ok).toBe(false);
   });
@@ -76,7 +90,13 @@ describe("profile import", () => {
     const file = writeSourceFile(
       sourceDir,
       "extra.json",
-      JSON.stringify({ id: "x", schemaVersion: "1.0", name: "x", themeId: "ghost-protocol", widgets: [] }),
+      JSON.stringify({
+        id: "x",
+        schemaVersion: "1.0",
+        name: "x",
+        themeId: "ghost-protocol",
+        widgets: [],
+      }),
     );
     expect(importProfile(file).ok).toBe(false);
   });
@@ -93,7 +113,12 @@ describe("profile import", () => {
     const file = writeSourceFile(
       sourceDir,
       "dup.json",
-      JSON.stringify({ id: "dup-profile", schemaVersion: "1.0", name: "First", themeId: "ghost-protocol" }),
+      JSON.stringify({
+        id: "dup-profile",
+        schemaVersion: "1.0",
+        name: "First",
+        themeId: "ghost-protocol",
+      }),
     );
     expect(importProfile(file).ok).toBe(true);
     expect(importProfile(file).ok).toBe(false);
@@ -125,7 +150,12 @@ describe("profile import", () => {
     const file = writeSourceFile(
       sourceDir,
       "target.json",
-      JSON.stringify({ id: "symlinked", schemaVersion: "1.0", name: "x", themeId: "ghost-protocol" }),
+      JSON.stringify({
+        id: "symlinked",
+        schemaVersion: "1.0",
+        name: "x",
+        themeId: "ghost-protocol",
+      }),
     );
     const destDir = getUserProfilesDir();
     fs.mkdirSync(destDir, { recursive: true });
@@ -180,7 +210,12 @@ describe("profile export", () => {
         const p = path.join(outDir, "src.json");
         fs.writeFileSync(
           p,
-          JSON.stringify({ id: "exportable", schemaVersion: "1.0", name: "Exportable", themeId: "redline" }),
+          JSON.stringify({
+            id: "exportable",
+            schemaVersion: "1.0",
+            name: "Exportable",
+            themeId: "redline",
+          }),
         );
         return p;
       })(),
@@ -246,7 +281,12 @@ describe("profile remove", () => {
     const file = writeSourceFile(
       sourceDir,
       "rm.json",
-      JSON.stringify({ id: "removable", schemaVersion: "1.0", name: "Removable", themeId: "ghost-protocol" }),
+      JSON.stringify({
+        id: "removable",
+        schemaVersion: "1.0",
+        name: "Removable",
+        themeId: "ghost-protocol",
+      }),
     );
     importProfile(file);
     expect(fs.existsSync(path.join(getUserProfilesDir(), "removable.json"))).toBe(true);
@@ -262,5 +302,29 @@ describe("profile remove", () => {
 
   it("fails cleanly removing a profile that doesn't exist", () => {
     expect(removeProfile("never-existed").ok).toBe(false);
+  });
+
+  it("reads the config before unlinking, so a corrupt config leaves the profile file intact (A-10)", () => {
+    const file = writeSourceFile(
+      sourceDir,
+      "keep.json",
+      JSON.stringify({
+        id: "keeper",
+        schemaVersion: "1.0",
+        name: "Keeper",
+        themeId: "ghost-protocol",
+      }),
+    );
+    importProfile(file);
+    const profilePath = path.join(getUserProfilesDir(), "keeper.json");
+    expect(fs.existsSync(profilePath)).toBe(true);
+
+    fs.writeFileSync(path.join(appDataRoot, "nightshift", "config.json"), "{ not json");
+
+    // removeProfile used to unlink first and read the config second, so this throw left the
+    // file deleted and the config still naming it - a half-performed removal. It must now
+    // abort before touching the filesystem.
+    expect(() => removeProfile("keeper")).toThrow();
+    expect(fs.existsSync(profilePath)).toBe(true);
   });
 });

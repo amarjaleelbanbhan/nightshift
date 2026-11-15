@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import { locateWindowsTerminalSettings } from "../../adapters/windows-terminal/locate.js";
 
 export type SupportLevel = "supported" | "partial" | "unsupported" | "unknown";
@@ -18,7 +19,9 @@ export interface Capabilities {
 }
 
 function locateClaudeCodeSettings(): string | null {
-  const candidate = `${os.homedir()}/.claude/settings.json`;
+  // path.join, not string concatenation: concatenating produced the mixed-separator path
+  // `C:\Users\Amar/.claude/settings.json` in `doctor` and `status` output (F7).
+  const candidate = path.join(os.homedir(), ".claude", "settings.json");
   return fs.existsSync(candidate) ? candidate : null;
 }
 

@@ -3,8 +3,21 @@ import { renderMasthead } from "../../banners/startup.js";
 import { intro, outro, log, promptSelect, promptText } from "../ui/prompts.js";
 import { listThemes } from "../../core/themes/registry.js";
 import { listProfiles, getProfile } from "../../core/profiles/registry.js";
-import { getNightshiftRoot, getUserThemesDir, getUserProfilesDir, getBackupsDir } from "../../core/config/paths.js";
-import { runThemeList, runThemePreview, runThemeApply } from "../commands/theme.js";
+import {
+  getNightshiftRoot,
+  getUserThemesDir,
+  getUserProfilesDir,
+  getBackupsDir,
+} from "../../core/config/paths.js";
+import {
+  runThemeList,
+  runThemePreview,
+  runThemeApply,
+  runThemeValidate,
+  runThemeCreate,
+  runThemeRemove,
+} from "../commands/theme.js";
+import { runSetup } from "../commands/setup.js";
 import {
   runProfileApply,
   runProfileImport,
@@ -27,7 +40,9 @@ export async function runInteractiveHome(): Promise<void> {
     // real session would open with, then exit cleanly instead of hanging.
     runStatus();
     console.log();
-    console.log(chalk.gray("Non-interactive environment detected - run a specific command instead, e.g.:"));
+    console.log(
+      chalk.gray("Non-interactive environment detected - run a specific command instead, e.g.:"),
+    );
     console.log(chalk.gray("  nightshift theme list"));
     console.log(chalk.gray("  nightshift profile list"));
     console.log(chalk.gray("  nightshift doctor"));
@@ -40,7 +55,11 @@ export async function runInteractiveHome(): Promise<void> {
   for (;;) {
     const section = await promptSelect<Section>("NIGHTSHIFT", [
       { label: "Workspace", value: "workspace", hint: "dashboard, doctor, quick actions" },
-      { label: "Customization", value: "customization", hint: "themes, profiles, ASCII art, widgets" },
+      {
+        label: "Customization",
+        value: "customization",
+        hint: "themes, profiles, ASCII art, widgets",
+      },
       { label: "Integrations", value: "integrations", hint: "terminal, shell, Claude Code" },
       { label: "System", value: "system", hint: "setup, fonts, backups, settings" },
       { label: "Exit", value: "exit" },
@@ -51,6 +70,14 @@ export async function runInteractiveHome(): Promise<void> {
     if (section === "customization") await runCustomizationMenu();
     if (section === "integrations") await runIntegrationsMenu();
     if (section === "system") await runSystemMenu();
+
+    // The commands above set process.exitCode on failure, and that value would otherwise stick
+    // for the rest of the session: one failed action in the middle of a long menu session made
+    // the whole session exit non-zero even after everything else succeeded (A-9). The user saw
+    // the failure reported inline and chose to carry on, so the session's exit code should
+    // describe the session, not its worst moment. One-shot commands are unaffected - this reset
+    // happens only inside the interactive loop, where the failure has already been shown.
+    process.exitCode = 0;
   }
 
   outro("See you next session.");
@@ -85,7 +112,11 @@ async function runCustomizationMenu(): Promise<void> {
 
 async function runIntegrationsMenu(): Promise<void> {
   const choice = await promptSelect("Integrations", [
-    { label: "Terminal Manager", value: "terminal", hint: "planned — use Theme Studio to apply colors today" },
+    {
+      label: "Terminal Manager",
+      value: "terminal",
+      hint: "planned — use Theme Studio to apply colors today",
+    },
     { label: "Shell Manager", value: "shell", hint: "planned" },
     { label: "Claude Code", value: "claude", hint: "planned" },
     { label: "Back", value: "back" },
@@ -96,16 +127,17 @@ async function runIntegrationsMenu(): Promise<void> {
 
 async function runSystemMenu(): Promise<void> {
   const choice = await promptSelect("System", [
-    { label: "Setup", value: "setup", hint: "planned" },
+    { label: "Setup", value: "setup", hint: "first-run configuration" },
     { label: "Fonts", value: "fonts", hint: "planned" },
     { label: "Backups", value: "backups" },
     { label: "Settings", value: "settings" },
     { label: "Back", value: "back" },
   ]);
   if (!choice || choice === "back") return;
+  if (choice === "setup") await runSetup();
   if (choice === "backups") await runBackupMenu();
   if (choice === "settings") runSettings();
-  if (choice === "setup" || choice === "fonts") log.warn(PLANNED);
+  if (choice === "fonts") log.warn(PLANNED);
 }
 
 function runSettings(): void {
@@ -133,6 +165,9 @@ async function runThemeMenu(): Promise<void> {
     { label: "List themes", value: "list" },
     { label: "Preview a theme", value: "preview" },
     { label: "Apply a theme", value: "apply" },
+    { label: "Validate a theme file", value: "validate" },
+    { label: "Create a new theme", value: "create" },
+    { label: "Remove a user theme", value: "remove" },
     { label: "Back", value: "back" },
   ]);
   if (!action || action === "back") return;
@@ -140,6 +175,43 @@ async function runThemeMenu(): Promise<void> {
     runThemeList();
     return;
   }
+
+  if (action === "validate") {
+    const file = await promptText("Path to the theme JSON file to validate:");
+    if (!file) return;
+    runThemeValidate(file);
+    return;
+  }
+
+  if (action === "create") {
+    const id = await promptText("Id for the new theme (lowercase, digits, hyphens):");
+    if (!id) return;
+    const name = await promptText("Display name:");
+    if (!name) return;
+    const from = await promptSelect(
+      "Clone which theme as the starting point?",
+      listThemes().map(({ theme }) => ({ label: theme.name, value: theme.id })),
+    );
+    if (!from) return;
+    runThemeCreate({ id, name, from });
+    return;
+  }
+
+  if (action === "remove") {
+    const userThemes = listThemes().filter((e) => e.source === "user");
+    if (userThemes.length === 0) {
+      log.info("No user themes to remove. Built-in themes cannot be removed.");
+      return;
+    }
+    const removeId = await promptSelect(
+      "Remove which theme?",
+      userThemes.map(({ theme }) => ({ label: theme.name, value: theme.id })),
+    );
+    if (!removeId) return;
+    runThemeRemove(removeId);
+    return;
+  }
+
   const themeId = await promptSelect(
     action === "preview" ? "Preview which theme?" : "Apply which theme?",
     listThemes().map(({ theme }) => ({ label: theme.name, value: theme.id })),
@@ -172,7 +244,8 @@ async function runProfileMenu(): Promise<void> {
     return;
   }
 
-  const entries = action === "remove" ? listProfiles().filter((e) => e.source === "user") : listProfiles();
+  const entries =
+    action === "remove" ? listProfiles().filter((e) => e.source === "user") : listProfiles();
   if (entries.length === 0) {
     log.info(action === "remove" ? "No user profiles to remove." : "No profiles found.");
     return;

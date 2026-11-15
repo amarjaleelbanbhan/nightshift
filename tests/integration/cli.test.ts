@@ -8,7 +8,10 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const cliEntry = path.resolve(__dirname, "../../dist/index.js");
 
-function runCli(args: string[], env: Record<string, string | undefined> = process.env): {
+function runCli(
+  args: string[],
+  env: Record<string, string | undefined> = process.env,
+): {
   stdout: string;
   status: number;
 } {
@@ -107,7 +110,10 @@ describe("CLI profile import/export/apply (isolated environment)", () => {
       "LocalState",
     );
     fs.mkdirSync(pkgDir, { recursive: true });
-    fs.writeFileSync(path.join(pkgDir, "settings.json"), JSON.stringify({ profiles: { defaults: {} } }));
+    fs.writeFileSync(
+      path.join(pkgDir, "settings.json"),
+      JSON.stringify({ profiles: { defaults: {} } }),
+    );
 
     env = { ...process.env, LOCALAPPDATA: localAppData, APPDATA: appData };
   });
@@ -120,7 +126,12 @@ describe("CLI profile import/export/apply (isolated environment)", () => {
     const sourceFile = path.join(tmpRoot, "custom.json");
     fs.writeFileSync(
       sourceFile,
-      JSON.stringify({ id: "cli-custom", schemaVersion: "1.0", name: "CLI Custom", themeId: "redline" }),
+      JSON.stringify({
+        id: "cli-custom",
+        schemaVersion: "1.0",
+        name: "CLI Custom",
+        themeId: "redline",
+      }),
     );
 
     const imported = runCli(["profile", "import", sourceFile], env);

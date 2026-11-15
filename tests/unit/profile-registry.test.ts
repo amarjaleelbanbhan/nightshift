@@ -36,7 +36,12 @@ describe("profile registry", () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(
       path.join(dir, "my-redline.json"),
-      JSON.stringify({ id: "my-redline", schemaVersion: "1.0", name: "My Redline", themeId: "redline" }),
+      JSON.stringify({
+        id: "my-redline",
+        schemaVersion: "1.0",
+        name: "My Redline",
+        themeId: "redline",
+      }),
     );
 
     const entry = listProfiles().find((e) => e.profile.id === "my-redline");

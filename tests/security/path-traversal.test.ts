@@ -16,7 +16,8 @@ describe("resolveSafePath", () => {
   });
 
   it("rejects an absolute path escaping the base directory", () => {
-    const absoluteEscape = os.platform() === "win32" ? "C:\\Windows\\System32\\drivers\\etc\\hosts" : "/etc/passwd";
+    const absoluteEscape =
+      os.platform() === "win32" ? "C:\\Windows\\System32\\drivers\\etc\\hosts" : "/etc/passwd";
     expect(() => resolveSafePath(base, absoluteEscape)).toThrow(UnsafePathError);
   });
 

@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { safeParseProfile, type Profile } from "./schema.js";
 import { resolveSafePath } from "../../security/paths.js";
+import { readJsonFileWithLimit } from "../../security/limits.js";
 import { getUserProfilesDir } from "../config/paths.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -25,11 +26,10 @@ function loadProfilesFromDir(dir: string): Profile[] {
     if (!fileName.endsWith(".json")) continue;
     const filePath = resolveSafePath(dir, fileName);
     try {
-      const raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
-      const result = safeParseProfile(raw);
+      const result = safeParseProfile(readJsonFileWithLimit(filePath));
       if (result.success) profiles.push(result.data);
     } catch {
-      // Skip unreadable/malformed profile files rather than crashing the CLI.
+      // Skip unreadable/malformed/oversized profile files rather than crashing the CLI.
     }
   }
   return profiles;
@@ -83,19 +83,26 @@ export interface UserProfileDirectoryReport {
 /** Used by `doctor` to surface unreadable/invalid user profile files that listProfiles() silently skips. */
 export function inspectUserProfilesDirectory(): UserProfileDirectoryReport {
   const dir = getUserProfilesDir();
-  const report: UserProfileDirectoryReport = { path: dir, exists: fs.existsSync(dir), validCount: 0, invalid: [] };
+  const report: UserProfileDirectoryReport = {
+    path: dir,
+    exists: fs.existsSync(dir),
+    validCount: 0,
+    invalid: [],
+  };
   if (!report.exists) return report;
 
   for (const fileName of fs.readdirSync(dir)) {
     if (!fileName.endsWith(".json")) continue;
     const filePath = resolveSafePath(dir, fileName);
     try {
-      const raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
-      const result = safeParseProfile(raw);
+      const result = safeParseProfile(readJsonFileWithLimit(filePath));
       if (result.success) {
         report.validCount += 1;
       } else {
-        report.invalid.push({ file: fileName, reason: result.error.issues[0]?.message ?? "schema validation failed" });
+        report.invalid.push({
+          file: fileName,
+          reason: result.error.issues[0]?.message ?? "schema validation failed",
+        });
       }
     } catch (error) {
       report.invalid.push({ file: fileName, reason: (error as Error).message });

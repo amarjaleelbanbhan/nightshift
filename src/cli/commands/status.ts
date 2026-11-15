@@ -1,15 +1,20 @@
 import chalk from "chalk";
 import os from "node:os";
-import { readConfig, isInitialized } from "../../core/config/store.js";
+import { tryReadConfig, isInitialized } from "../../core/config/store.js";
 import { detectCapabilities } from "../../core/capabilities/detect.js";
 import { getTheme } from "../../core/themes/registry.js";
 import { getProfile } from "../../core/profiles/registry.js";
 import { renderStatusPanel } from "../../banners/startup.js";
 import { renderTable } from "../ui/table.js";
+import { reportConfigCorrupt } from "../errors.js";
 
 export function runStatus(): void {
   const caps = detectCapabilities();
-  const config = isInitialized() ? readConfig() : null;
+  // `status` is one of the commands a user runs *because* something is wrong, so a corrupt
+  // config.json degrades the active-theme/profile rows rather than killing the report. The
+  // corruption is named on stderr and reflected in the exit code, so it is never silent.
+  const configResult = tryReadConfig();
+  const config = configResult.ok ? configResult.config : null;
   const activeTheme = config?.activeThemeId ? getTheme(config.activeThemeId) : undefined;
   const activeProfile = config?.activeProfileId ? getProfile(config.activeProfileId) : undefined;
 
@@ -19,19 +24,28 @@ export function runStatus(): void {
       ["Field", "Value"],
       [
         ["OS", `${os.platform()} ${os.release()}`],
-        ["Windows Terminal", describe(caps.windowsTerminal.support, caps.windowsTerminal.settingsPath)],
+        [
+          "Windows Terminal",
+          describe(caps.windowsTerminal.support, caps.windowsTerminal.settingsPath),
+        ],
         ["Claude Code", describe(caps.claudeCode.support, caps.claudeCode.settingsPath)],
         [
           "Config",
-          isInitialized()
-            ? chalk.green("initialized")
-            : chalk.yellow("not initialized (run `nightshift init`)"),
+          !configResult.ok
+            ? chalk.red("corrupt or unreadable")
+            : isInitialized()
+              ? chalk.green("initialized")
+              : chalk.yellow("not initialized (run `nightshift init`)"),
         ],
         ["Active theme", activeTheme ? activeTheme.name : chalk.gray("none")],
         ["Active profile", activeProfile ? activeProfile.profile.name : chalk.gray("none")],
       ],
     ),
   );
+
+  if (!configResult.ok) {
+    reportConfigCorrupt(configResult.error);
+  }
 }
 
 function describe(support: string, locatedPath: string | null): string {

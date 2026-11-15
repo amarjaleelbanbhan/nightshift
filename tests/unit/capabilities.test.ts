@@ -8,9 +8,7 @@ describe("detectCapabilities", () => {
     expect(["supported", "partial", "unsupported", "unknown"]).toContain(
       caps.windowsTerminal.support,
     );
-    expect(["supported", "partial", "unsupported", "unknown"]).toContain(
-      caps.claudeCode.support,
-    );
+    expect(["supported", "partial", "unsupported", "unknown"]).toContain(caps.claudeCode.support);
   });
 
   it("never claims a platform is supported without evidence", () => {

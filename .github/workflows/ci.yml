@@ -21,8 +21,11 @@ jobs:
         node-version: ["22.12.0", "24", "26"]
     name: test (node ${{ matrix.node-version }})
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # v5, not v4: the v4 actions declare the Node 20 action runtime, which GitHub has
+      # deprecated and now force-runs on Node 24, emitting a warning annotation on every job.
+      # Pinning v5 removes the annotation and avoids a break when the shim is withdrawn.
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm

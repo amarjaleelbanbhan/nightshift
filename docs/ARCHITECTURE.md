@@ -28,8 +28,10 @@ src/
 │   ├── config/                  NIGHTSHIFT's own config.json: paths + read/write
 │   ├── capabilities/            platform/terminal/Claude Code detection
 │   └── fonts/                   detect.ts: installed font families, read from the Windows
-│                                  font directories by parsing each file's sfnt `name` table
-│                                  (read-only; installing fonts is not implemented)
+│                                  font directories by parsing each file's sfnt `name` table;
+│                                  install.ts: plan/execute a copy of local font files into the
+│                                  per-user font directory (copy only — no registry write, no
+│                                  download, no removal)
 ├── adapters/
 │   └── windows-terminal/        locate settings.json, merge theme into it
 ├── backup/                      generic file-snapshot backup/restore
@@ -59,6 +61,14 @@ src/
   and profile apply were two copies of this same sequence; a fix applied to one copy and not
   the other was the real hazard, not the duplication. The callers supply only the noun for the
   failure message, their own success message, and the config setter to run.
+- **A command that writes outside NIGHTSHIFT's config directory uses the `setup` structure, not
+  its own.** `buildProposal` / `renderProposal` / `execute`, where the first two perform no
+  writes, so the non-interactive path is structurally incapable of modifying the machine rather
+  than merely choosing not to. `font install` (`core/fonts/install.ts` +
+  `cli/commands/font.ts`) is the second user of that shape and adds no second approval flow:
+  same TTY guard, same `--yes` semantics, same "nothing has been written" wording. It also
+  re-uses the *existing* detector for its post-write verification rather than deciding for
+  itself whether the write worked — and reports a failure when the family still is not found.
 - **`backup/manager.ts` is generic**, not Windows-Terminal-specific: it snapshots any file path
   with metadata (reason, timestamp, original path) and restores by id. Any future adapter
   (Linux/macOS terminals, Claude Code settings) reuses it rather than reimplementing backup.

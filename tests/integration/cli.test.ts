@@ -71,7 +71,8 @@ describe("CLI (built dist/index.js)", () => {
     ["profile", ["list", "show", "apply", "import", "export", "remove"]],
     ["profile import", ["--overwrite"]],
     ["profile export", ["--output <path>", "--overwrite"]],
-    ["font", ["list", "check <family>"]],
+    ["font", ["list", "check <family>", "install [options] <path>"]],
+    ["font install", ["--yes"]],
     // `restore` exists both at the top level and under `backup`. Anyone holding an id from
     // `backup list` reaches for `backup restore <id>`, which used to be an unknown command.
     ["backup", ["list", "create", "restore <backupId>"]],

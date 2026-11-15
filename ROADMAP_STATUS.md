@@ -13,7 +13,8 @@ Phase 14 = testing/CI, Phase 15 = documentation, Phase 16 = release prep.
 **Merged foundation:** the 1.0.0 hardening cycle, PRs #2, #24 and #25, merged to `main` at
 commit `cf2df3f`
 **Current phase:** Phase 2 and the theme-engine portion of Phase 4 are **done**; Phase 3 (font
-manager) is **partially done** (detection only). Phase 15 (documentation) is in progress on this
+manager) is **partially done** — detection, plus a copy-only `font install` that does not write
+the font registry key and does not download. Phase 15 (documentation) is in progress on this
 branch. See the per-phase sections below.
 **Release version:** still `0.2.0` in `package.json`. Whether this cycle ships as `0.3.0` or
 `1.0.0` is an open maintainer decision (issue #9), and `CHANGELOG.md` is deliberately blocked on
@@ -28,8 +29,9 @@ for every future PR before it's opened, not just retroactively.
 ## Why phases are not all attempted at once
 
 - **Font installation (Phase 3)** writes files to the user's font directory — a
-  "user-approved action." Needs a specific proposal shown before any write. Font *detection* is
-  read-only and therefore shipped; installation did not.
+  "user-approved action." It now ships *with* that proposal shown before any write (issue #15),
+  reusing `setup`'s structure. What still did not ship is the registry write that completes a
+  Windows font install and any download, both for reasons recorded in the Phase 3 section.
 - **Starship / shell-profile integration (Phase 6)** edits shell startup files — requires
   showing the exact diff and getting explicit approval first.
 - **Linux/macOS adapters (Phase 9)** cannot be tested on this machine (Windows 11 only).
@@ -179,7 +181,7 @@ Evidence:
 
 ## Phase 3 — Font manager
 
-Status: **Partially done — detection only**
+Status: **Partially done — detection, plus a copy-only install (no registry write, no download)**
 
 `src/core/fonts/detect.ts` plus `font list` / `font check`, merged as `9300015`.
 
@@ -192,9 +194,25 @@ Status: **Partially done — detection only**
   missing, and NIGHTSHIFT printed `✓ Applied` either way. Verified live — this machine does
   *not* have `Cascadia Code`, which the default theme `ghost-protocol` requests, so `doctor`
   reports exactly that case rather than a hypothetical one.
-- **Not done:** installing, downloading or removing fonts. That writes to the user's font
-  directory, so it needs the same shown-proposal-and-approval flow as `setup`, and it is not
-  built. Both `font` failure hints say so rather than leaving the user guessing.
+`font install <path>` (issue #15) adds the write half: `src/core/fonts/install.ts` plus
+`runFontInstall`.
+
+- Copies a local `.ttf`/`.otf`/`.ttc` file, or every font file in a directory, into
+  `%LOCALAPPDATA%\Microsoft\Windows\Fonts`. It is the same `buildProposal` / `renderProposal` /
+  `execute` shape as `setup` — the first two write nothing, so the non-interactive path cannot
+  write at all — with the same TTY guard and the same `--yes` semantics.
+- Verification re-runs `findInstalledFont` after the copy. A family the detector still cannot
+  find is reported as a failure with exit `1`, not as a success with a caveat.
+- **Not done, and stated in the proposal before approval rather than discovered afterwards:**
+  the registry value under `HKCU\Software\Microsoft\Windows NT\CurrentVersion\Fonts` that
+  Windows uses to enumerate fonts. Writing it needs `reg.exe` (a child process) or a Win32 call
+  (a native dependency), and `src/` has neither. So the command prints the exact `reg add`
+  command the user must run to finish, and never claims the registration happened. **A user
+  will hit this:** after `font install`, `nightshift font check` finds the family while
+  Windows Terminal's own font picker may not.
+- **Not done:** downloading fonts (it would be this project's first network operation and a
+  threat-model change — the path argument is local-only), removing fonts, and writing
+  `%WINDIR%\Fonts` for all users.
 - **Known ceiling:** Nerd Font flagging is a name-based heuristic, not glyph inspection. The
   command's own output states this, and so does `README.md`.
 
@@ -303,6 +321,14 @@ What still needs a human, or a machine this tool does not have:
   transparency, acrylic, or font smoothing.
 - **Nerd Font detection is a name heuristic.** Glyph coverage is never inspected, so a patched
   font under an unpatched name reads as "no" and a font merely named like one reads as "likely".
+- **`font install` was never run against the real font directory.** Like `theme apply`, it is
+  exercised only through a temporary `LOCALAPPDATA` (`tests/integration/font-install.test.ts`),
+  because a test that got the environment wrong would install fixture fonts onto the
+  developer's machine. What that harness proves is that the copy lands, that the proposal path
+  writes nothing, and that detection confirms the family afterwards. What it cannot prove is
+  the part NIGHTSHIFT does not do: **whether Windows Terminal picks up a font that was copied
+  but not registered is unverified**, and the command's own output assumes the pessimistic
+  answer rather than claiming the optimistic one.
 - **Font detection was verified on one machine only.** 200 families, two directories, one
   Windows 11 install. A machine with fonts registered only in the registry, or a non-Windows
   machine, is covered by `unsupported`/`unknown` reporting rather than by having been tried.

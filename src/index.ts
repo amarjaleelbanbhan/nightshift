@@ -150,7 +150,7 @@ program
   .description("Diagnose the environment and NIGHTSHIFT's configuration")
   .action(async () => (await doctorModule()).runDoctor());
 
-const font = program.command("font").description("Inspect installed fonts");
+const font = program.command("font").description("Inspect and install fonts");
 font
   .command("list")
   .description("List font families installed on this system")
@@ -159,6 +159,15 @@ font
   .command("check <family>")
   .description("Check whether a font family is installed (exit 1 if it is not)")
   .action(async (family: string) => (await fontModule()).runFontCheck(family));
+font
+  .command("install <path>")
+  .description(
+    "Install a local font file (or a directory of them) for the current user: show a proposal, then copy on approval",
+  )
+  .option("--yes", "accept the proposal without a prompt (required in non-interactive shells)")
+  .action(async (sourcePath: string, options: { yes?: boolean }) =>
+    (await fontModule()).runFontInstall(sourcePath, options),
+  );
 
 const backup = program.command("backup").description("Back up terminal configuration");
 backup

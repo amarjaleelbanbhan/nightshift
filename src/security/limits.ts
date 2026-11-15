@@ -12,6 +12,14 @@ import fs from "node:fs";
  */
 export const MAX_JSON_FILE_BYTES = 64 * 1024;
 
+/**
+ * Cap on one font file accepted by `font install`. Separate from the JSON cap because the two
+ * are not the same kind of file: a patched Nerd Font `.ttf` is routinely 2-5 MB and a `.ttc`
+ * collection can exceed 20 MB, so the 64 KB JSON limit would refuse every real font, while a
+ * cap is still needed because the file is read into memory to be written atomically.
+ */
+export const MAX_FONT_FILE_BYTES = 32 * 1024 * 1024;
+
 export class FileTooLargeError extends Error {
   constructor(filePath: string, size: number) {
     super(

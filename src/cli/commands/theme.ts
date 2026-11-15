@@ -3,6 +3,7 @@ import { listThemes, getTheme } from "../../core/themes/registry.js";
 import { tryReadConfig } from "../../core/config/store.js";
 import { applyThemeToWindowsTerminal } from "../../core/themes/apply.js";
 import { validateThemeFile, createTheme, removeTheme } from "../../core/themes/manager.js";
+import { buildApplyPreview, printApplyPreview } from "./apply-preview.js";
 import { renderTable } from "../ui/table.js";
 import { failWith, successMessage, warnMessage, emptyState } from "../ui/feedback.js";
 import { auditThemeContrast, WCAG_AA_BODY, WCAG_AA_LARGE } from "../../core/themes/contrast.js";
@@ -120,7 +121,15 @@ export function runThemePreview(id: string): void {
   }
 }
 
-export function runThemeApply(id: string): void {
+export function runThemeApply(id: string, options: { dryRun?: boolean | undefined } = {}): void {
+  if (options.dryRun) {
+    printApplyPreview(
+      buildApplyPreview(id, `theme apply ${id}`),
+      "Run `nightshift theme list` to see available themes, or `nightshift doctor` to check your environment.",
+    );
+    return;
+  }
+
   const result = applyThemeToWindowsTerminal(id);
   if (result.ok) {
     console.log(successMessage(result.message));

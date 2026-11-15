@@ -10,7 +10,9 @@ import {
 import {
   resolveSettingsTarget,
   describeSettingsTarget,
+  type SettingsTarget,
 } from "../../adapters/windows-terminal/locate.js";
+import type { Theme } from "./schema.js";
 
 /**
  * The theme-application engine: it orchestrates the Windows Terminal adapter, the backup
@@ -29,11 +31,16 @@ export interface ApplyResult {
 }
 
 /**
- * Backs up, merges, writes, and verifies a theme against Windows Terminal's settings.json -
- * without touching NIGHTSHIFT's own active-state config. Profile apply reuses this exact
- * backup/verify/rollback engine instead of a second implementation.
+ * Which theme, and which file. Resolved in one place because two callers need exactly this
+ * answer and must agree on it: the apply engine below, and `--dry-run`'s preview, which has to
+ * name the same resolved path and refuse the same unknown ids - a preview that disagreed with
+ * the write about either would be worse than no preview.
  */
-export function applyThemeFileOnly(id: string): ApplyResult {
+export type ApplyTargetResult =
+  { ok: true; theme: Theme; target: SettingsTarget } | { ok: false; message: string };
+
+/** Resolves theme id and settings.json target. Reads the filesystem; writes nothing. */
+export function resolveApplyTarget(id: string): ApplyTargetResult {
   const theme = getTheme(id);
   if (!theme) {
     return { ok: false, message: `No theme found with id "${id}".` };
@@ -51,10 +58,21 @@ export function applyThemeFileOnly(id: string): ApplyResult {
   }
 
   // Resolve before anything is read, backed up or written, so a symlinked settings.json is
-  // followed to the file it points at instead of being renamed over (#27). Everything below -
-  // including `createBackup`, so a rollback restores to the place the content actually lives -
-  // uses the resolved path; the message names both.
-  const target = resolveSettingsTarget(located);
+  // followed to the file it points at instead of being renamed over (#27). Everything
+  // downstream - including `createBackup`, so a rollback restores to the place the content
+  // actually lives - uses the resolved path; the message names both.
+  return { ok: true, theme, target: resolveSettingsTarget(located) };
+}
+
+/**
+ * Backs up, merges, writes, and verifies a theme against Windows Terminal's settings.json -
+ * without touching NIGHTSHIFT's own active-state config. Profile apply reuses this exact
+ * backup/verify/rollback engine instead of a second implementation.
+ */
+export function applyThemeFileOnly(id: string): ApplyResult {
+  const resolved = resolveApplyTarget(id);
+  if (!resolved.ok) return resolved;
+  const { theme, target } = resolved;
   const settingsPath = target.path;
 
   let backup: ReturnType<typeof createBackup>;

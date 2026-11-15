@@ -1,5 +1,6 @@
 import chalk from "chalk";
 import { listProfiles, getProfile } from "../../core/profiles/registry.js";
+import type { Profile } from "../../core/profiles/schema.js";
 import { importProfile, exportProfile, removeProfile } from "../../core/profiles/manager.js";
 import { getTheme } from "../../core/themes/registry.js";
 import { tryReadConfig, setActiveProfileAndTheme } from "../../core/config/store.js";
@@ -8,6 +9,7 @@ import {
   recordActiveState,
   type ApplyResult,
 } from "../../core/themes/apply.js";
+import { buildApplyPreview, printApplyPreview } from "./apply-preview.js";
 import { renderTable } from "../ui/table.js";
 import { failWith, successMessage, warnMessage, emptyState } from "../ui/feedback.js";
 import { reportConfigCorrupt } from "../errors.js";
@@ -82,12 +84,13 @@ export function runProfileShow(id: string): void {
 }
 
 /**
- * Applies a profile's theme using the shared theme-apply engine (backup/verify/rollback -
- * see `src/core/themes/apply.ts`), then atomically records both the active profile and theme
- * in a single config write so the two can never disagree. The rollback-on-config-failure path
- * is `recordActiveState`, shared with theme apply rather than duplicated here.
+ * The profile to apply, or the reason it cannot be. Shared by `applyProfile` and
+ * `profile apply --dry-run`, so the preview refuses the same ids with the same words as the
+ * write it is previewing.
  */
-export function applyProfile(id: string): ApplyResult {
+function resolveProfileToApply(
+  id: string,
+): { ok: true; profile: Profile } | { ok: false; message: string } {
   const entry = getProfile(id);
   if (!entry) {
     return { ok: false, message: `No profile found with id "${id}".` };
@@ -100,6 +103,19 @@ export function applyProfile(id: string): ApplyResult {
       message: `Profile "${profile.id}" references theme "${profile.themeId}", which does not exist.`,
     };
   }
+  return { ok: true, profile };
+}
+
+/**
+ * Applies a profile's theme using the shared theme-apply engine (backup/verify/rollback -
+ * see `src/core/themes/apply.ts`), then atomically records both the active profile and theme
+ * in a single config write so the two can never disagree. The rollback-on-config-failure path
+ * is `recordActiveState`, shared with theme apply rather than duplicated here.
+ */
+export function applyProfile(id: string): ApplyResult {
+  const resolved = resolveProfileToApply(id);
+  if (!resolved.ok) return resolved;
+  const { profile } = resolved;
 
   const fileResult = applyThemeFileOnly(profile.themeId);
   if (!fileResult.ok) return fileResult;
@@ -111,15 +127,26 @@ export function applyProfile(id: string): ApplyResult {
   });
 }
 
-export function runProfileApply(id: string): void {
+const PROFILE_APPLY_HINT =
+  "Run `nightshift profile list` to see available profiles, or `nightshift doctor` to check your environment.";
+
+export function runProfileApply(id: string, options: { dryRun?: boolean | undefined } = {}): void {
+  if (options.dryRun) {
+    // A profile's only write is its theme, so the preview is the theme preview - named after the
+    // command the user actually typed, and refusing an unknown profile before it is built.
+    const resolved = resolveProfileToApply(id);
+    printApplyPreview(
+      resolved.ok ? buildApplyPreview(resolved.profile.themeId, `profile apply ${id}`) : resolved,
+      PROFILE_APPLY_HINT,
+    );
+    return;
+  }
+
   const result = applyProfile(id);
   if (result.ok) {
     console.log(successMessage(result.message));
   } else {
-    failWith(
-      result.message,
-      "Run `nightshift profile list` to see available profiles, or `nightshift doctor` to check your environment.",
-    );
+    failWith(result.message, PROFILE_APPLY_HINT);
   }
 }
 

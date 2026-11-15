@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -108,6 +108,70 @@ describe("backup metadata validation", () => {
       poison(huge, `{"pad":"${"x".repeat(MAX_JSON_FILE_BYTES + 1)}"}`);
 
       expect(listBackups().map((b) => b.id)).toEqual([keep]);
+    });
+  });
+
+  /**
+   * Backup ids are `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`, and the entry directory
+   * is created with `mkdirSync(..., { recursive: true })`, which does **not** throw on an
+   * existing path. So a duplicate id would not error - it would silently overwrite the earlier
+   * backup's snapshot and metadata, and `restore` would hand back the wrong file.
+   *
+   * The millisecond alone is not enough: the apply engine takes a backup immediately before a
+   * write, and nothing stops two backups landing in the same millisecond. The 32 bits of UUID
+   * are what actually carry uniqueness there, so that is what is tested - with the clock pinned,
+   * because on a real clock these calls take >1ms each and the timestamp would do all the work,
+   * leaving the suffix untested. (The suffix narrows a collision to ~1 in 4.3e9 within one
+   * millisecond; this is not a demonstrated flaw, it is the property being held in place.)
+   */
+  describe("backup id uniqueness within a single millisecond", () => {
+    const FIXED = new Date("2026-03-04T05:06:07.008Z");
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(FIXED);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("gives 50 same-millisecond backups 50 distinct, independently restorable snapshots", () => {
+      const made: Array<{ id: string; content: string }> = [];
+      for (let i = 0; i < 50; i += 1) {
+        const content = JSON.stringify({ generation: i });
+        fs.writeFileSync(targetFile, content);
+        made.push({ id: createBackup(targetFile, `generation ${i}`).id, content });
+      }
+
+      // Non-vacuity guard: if the clock were not actually pinned these prefixes would differ
+      // and the test would be measuring Date.now() rather than the random suffix.
+      const prefixes = new Set(made.map((m) => m.id.split("-")[0]));
+      expect(prefixes.size).toBe(1);
+      expect([...prefixes][0]).toBe(String(FIXED.getTime()));
+
+      expect(new Set(made.map((m) => m.id)).size).toBe(50);
+      expect(made.every((m) => /^\d+-[0-9a-f]{8}$/.test(m.id))).toBe(true);
+      expect(listBackups()).toHaveLength(50);
+
+      // The real assertion: no entry directory was reused, so every snapshot still holds the
+      // content that was on disk when it was taken.
+      for (const { id, content } of made) {
+        fs.writeFileSync(targetFile, "CLOBBERED");
+        expect(restoreBackup(id).id).toBe(id);
+        expect(fs.readFileSync(targetFile, "utf8")).toBe(content);
+      }
+    });
+
+    it("lists every same-millisecond backup even though createdAt cannot order them", () => {
+      // `listBackups` sorts on `createdAt`, which is millisecond-resolution, so these are all
+      // equal and the order between them is not meaningful. That is acceptable only because
+      // `restore` takes an explicit id - what would not be acceptable is losing entries.
+      const ids = [1, 2, 3].map((i) => createBackup(targetFile, `r${i}`).id);
+
+      const listed = listBackups();
+      expect(new Set(listed.map((b) => b.createdAt)).size).toBe(1);
+      expect(listed.map((b) => b.id).sort()).toEqual([...ids].sort());
     });
   });
 

@@ -79,6 +79,93 @@ describe("mergeThemeIntoSettings - the profiles container", () => {
     expect((merged.profiles as Record<string, unknown>).list).toEqual({ notAnArray: true });
   });
 
+  it.each([
+    ["an array", [1, 2]],
+    ["null", null],
+    ["a number", 14],
+    ["a boolean", false],
+  ])("refuses a `profiles.defaults.font` that is %s rather than spreading it", (_label, value) => {
+    const settings = { profiles: { defaults: { font: value } } };
+    expect(() => mergeThemeIntoSettings(settings, ghostProtocol)).toThrow(
+      /profiles\.defaults\.font/,
+    );
+  });
+
+  it("replaces an existing colorScheme rather than leaving the old name in place", () => {
+    const settings = { profiles: { defaults: { colorScheme: "Campbell", useAcrylic: true } } };
+    const defaults = (
+      mergeThemeIntoSettings(settings, ghostProtocol).profiles as Record<string, unknown>
+    ).defaults as Record<string, unknown>;
+    expect(defaults.colorScheme).toBe(ghostProtocol.name);
+    expect(defaults.useAcrylic).toBe(true);
+  });
+
+  it("leaves `profiles.defaults.font` entirely alone for a theme with no typography", () => {
+    // Only user themes can lack `typography` - all four built-ins declare it - so this branch
+    // is reachable only from a hand-written theme file. Wiping the font face someone chose in
+    // Windows Terminal's own settings UI because their theme is silent about fonts would be a
+    // destructive surprise, and `font` is the one key here that is not ours to touch.
+    const noTypography = { ...ghostProtocol };
+    delete (noTypography as { typography?: unknown }).typography;
+    const settings = {
+      profiles: { defaults: { font: { face: "Consolas", size: 11, weight: "normal" } } },
+    };
+
+    const defaults = (
+      mergeThemeIntoSettings(settings, noTypography).profiles as Record<string, unknown>
+    ).defaults as Record<string, unknown>;
+
+    expect(defaults.font).toEqual({ face: "Consolas", size: 11, weight: "normal" });
+    expect(defaults.colorScheme).toBe(ghostProtocol.name);
+  });
+
+  it("does not invent a `font` key when neither the theme nor the settings have one", () => {
+    const noTypography = { ...ghostProtocol };
+    delete (noTypography as { typography?: unknown }).typography;
+    const defaults = (mergeThemeIntoSettings({}, noTypography).profiles as Record<string, unknown>)
+      .defaults as Record<string, unknown>;
+    expect("font" in defaults).toBe(false);
+  });
+
+  /**
+   * settings.json is parsed with `JSON.parse` and then object-spread three times over
+   * (`settings`, `profiles`, `profiles.defaults`). `JSON.parse` makes `__proto__` an *own* data
+   * property and spread copies own properties with `CreateDataProperty`, which does not run the
+   * `__proto__` setter - so this is safe today. It is asserted rather than assumed because the
+   * safety is a property of the spread operator, not of anything visible in this module: an
+   * innocent-looking refactor to `Object.assign({}, settings)` keeps every other test in this
+   * file green while reintroducing the hole.
+   */
+  describe("prototype-polluting keys in settings.json", () => {
+    afterEach(() => {
+      delete (Object.prototype as Record<string, unknown>).polluted;
+    });
+
+    const POISON = '{"polluted":true}';
+
+    it.each([
+      ["the root", `{"__proto__":${POISON},"copyOnSelect":true}`],
+      ["profiles", `{"profiles":{"__proto__":${POISON},"list":[]}}`],
+      ["profiles.defaults", `{"profiles":{"defaults":{"__proto__":${POISON}}}}`],
+    ])("does not pollute Object.prototype via a `__proto__` key at %s", (_label, json) => {
+      // Written as JSON text and parsed, not as an object literal: `{__proto__: x}` in source
+      // *sets the prototype* and produces no own key at all, so a literal would test nothing.
+      // JSON.parse is also how the real input arrives.
+      const settings = JSON.parse(json) as Record<string, unknown>;
+      // Guards against a vacuous pass: if `__proto__` were a prototype assignment rather than
+      // an own key, it would not survive stringify and there would be nothing under test.
+      expect(JSON.stringify(settings)).toContain('"__proto__"');
+
+      const merged = mergeThemeIntoSettings(settings, ghostProtocol);
+
+      expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+      expect((merged as Record<string, unknown>).polluted).toBeUndefined();
+      // And the key survives: NIGHTSHIFT does not quietly delete data it does not understand,
+      // even data this ugly.
+      expect(JSON.stringify(merged)).toContain('"__proto__"');
+    });
+  });
+
   it("keeps schemes whose names differ only in case, since Windows Terminal matches exactly", () => {
     const settings = {
       schemes: [{ name: "ghost protocol" }, { name: "GHOST PROTOCOL" }],
@@ -144,5 +231,27 @@ describe("readWindowsTerminalSettings", () => {
   it("still rejects a JSON array at the root", () => {
     const file = write("[1, 2, 3]");
     expect(() => readWindowsTerminalSettings(file)).toThrow(/does not contain a JSON object/);
+  });
+
+  it.each([
+    ["null", "null"],
+    ["a boolean", "true"],
+    ["a number", "42"],
+    ["a bare string", '"Campbell"'],
+  ])("rejects a settings.json whose root is %s", (_label, content) => {
+    // Each of these parses cleanly, so the only thing standing between them and
+    // `mergeThemeIntoSettings` spreading a non-object is this root check. `null` in particular
+    // passes a bare `typeof x === "object"` test.
+    const file = write(content);
+    expect(() => readWindowsTerminalSettings(file)).toThrow(/does not contain a JSON object/);
+  });
+
+  it("falls back to the generic message for a `/* */` block comment", () => {
+    // The JSONC hint is deliberately `//`-only, because that is the form Windows Terminal's own
+    // generated header uses and a `/*` test would have to tell a comment apart from a `/`
+    // inside a string value. Pinned so the narrowness is a decision on record, not a surprise.
+    const file = write('/* generated by Windows Terminal */\n{"a": 1}');
+    expect(() => readWindowsTerminalSettings(file)).toThrow(/is not valid JSON/);
+    expect(() => readWindowsTerminalSettings(file)).toThrow(/Fix the JSON syntax/);
   });
 });

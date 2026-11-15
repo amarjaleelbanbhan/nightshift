@@ -25,9 +25,32 @@ write via `setActiveProfileAndTheme`.
 
 ## Theme (`src/core/themes/schema.ts`)
 
-See `README.md` "Theme format" for the full example. Required: `id`, `schemaVersion` (literal
-`"1.0"`), `name`, `colors` (9 named hex colors), `ansi` (16 named hex colors). Optional:
-`description`, `typography`, `effects`.
+See `README.md` "Theme format" for the full example — it is a complete, valid file, verified by
+running `theme validate` on the JSON block extracted from the README itself. Required: `id`
+(lowercase letters, digits, hyphens), `schemaVersion` (literal `"1.0"`), `name`, `colors` (9
+named hex colors), `ansi` (16 named hex colors). Optional: `description`, `typography`,
+`effects`.
+
+There is no shorthand for `ansi` and no defaulting: all 16 keys are required, and a file missing
+them fails with one issue per missing key. This is why the README example is written out in full
+rather than abbreviated — the abbreviation was a 16-error paste for anyone who copied it.
+
+User themes live in `%APPDATA%\nightshift\themes\<id>.json`. That directory is written by
+`theme create` (which clones an existing theme, so the result is valid immediately) and read by
+the registry; files placed there by hand are validated on load and skipped if they fail.
+
+`theme validate <file>` is the standalone validator: it reports every schema issue with its
+dotted field path rather than stopping at the first, and exits `1` on an invalid file. Contrast
+findings are reported separately with a different glyph and never set the exit code — a
+low-contrast theme is a valid theme that happens to be hard to read, and failing it would make
+`validate` unusable for the deliberately-dim themes people actually write.
+
+A built-in theme id (`ghost-protocol`, `monolith`, `redline`, `deep-space`) can never be
+written or removed by `theme create`/`theme remove`, with or without `--overwrite`: the
+built-ins ship inside the package, so a user file shadowing one would be un-undoable from the
+CLI. `theme remove` additionally refuses the *active* theme, and reads the config before
+unlinking anything, so a corrupt config cannot leave the file deleted and the config not
+updated.
 
 ## Profile (`src/core/profiles/schema.ts`)
 
@@ -54,3 +77,37 @@ Not a NIGHTSHIFT format — this is Microsoft's own schema. NIGHTSHIFT only ever
 parts of it: the top-level `schemes` array (adds/replaces one entry by `name`) and
 `profiles.defaults.colorScheme`/`profiles.defaults.font`. Every other key is round-tripped
 unchanged. See `src/adapters/windows-terminal/apply.ts`.
+
+Two shapes of this file are **refused rather than rewritten**, because a wrong guess here
+destroys user data and declining does not:
+
+- **`profiles` (or `profiles.defaults`, or `profiles.defaults.font`) is not a plain object.**
+  The pre-1.0 Windows Terminal format put a JSON *array* at `profiles`. That used to be
+  object-spread into `{"0": …, "1": …}`, destroying the entire profile list while reporting
+  success. It is now refused with a message telling the user to open Windows Terminal's
+  settings UI once, which migrates the file properly. Declining is recoverable; a silent
+  rewrite is not.
+- **The file contains `//` comments.** Windows Terminal documents `settings.json` as JSONC and
+  its own generated file has carried a comment header. NIGHTSHIFT writes via `JSON.stringify`,
+  which cannot round-trip comments, so it names the file and the cause instead of relaying
+  `Unexpected token /`, and refuses to apply. This is a current limitation, not a fixed bug —
+  tracked as issue #14. The detection pattern requires `//` to open a line, so a URL inside a
+  string value (`"$help": "https://…"`) is not mistaken for a comment.
+
+A UTF-8 BOM *is* handled (stripped before parsing) rather than refused: Notepad saving the file
+once as "UTF-8 with BOM" is common and the fix is unambiguous.
+
+A non-array `schemes` becomes an empty list rather than an error, and non-object entries inside
+it are passed through untouched instead of having `.name` read off them. They are kept, not
+dropped — NIGHTSHIFT does not delete data it cannot interpret.
+
+## Fonts
+
+Not a configuration format — there is nothing to write. `src/core/fonts/detect.ts` reads
+installed families out of `%LOCALAPPDATA%\Microsoft\Windows\Fonts` (this user) and
+`%WINDIR%\Fonts` (all users) by parsing each font file's sfnt `name` table. It reports
+`unsupported` on non-Windows platforms and `unknown` when neither directory can be located,
+rather than returning an empty list that would read as "no fonts installed".
+
+A theme's `typography.family` is matched against this list by `doctor`; nothing writes to a
+font directory, because font installation is not implemented.

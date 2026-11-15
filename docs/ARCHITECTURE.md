@@ -19,7 +19,8 @@ src/
 │                                 feedback.ts (error/empty/success/warn lines with a next
 │                                 step), color-mode.ts (NO_COLOR / --no-color)
 ├── core/
-│   ├── themes/                  schema (Zod), builtin themes, registry (builtin+user),
+│   ├── themes/                  schema (Zod), builtin themes, registry (builtin+user, read-
+│   │                             only), manager.ts (validate/create/remove, mutating),
 │   │                             apply.ts (the Windows Terminal apply engine),
 │   │                             contrast.ts (WCAG ratios)
 │   ├── profiles/                schema (Zod, strict), registry (bundled+user, read-only),
@@ -69,7 +70,11 @@ src/
   and a user source and return a tagged `{ ..., source: "builtin" | "user" }` list.** This
   pattern is reused rather than re-invented for any future asset type (banners, widget packs).
 - **No background process.** Every command is a one-shot `node` invocation. Widgets (planned)
-  must compute on demand, not via a daemon.
+  must compute on demand, not via a daemon. This is also why command *modules* are imported
+  lazily inside each action handler in `src/index.ts` while every command, option and
+  description stays registered eagerly: with no daemon, module-graph size is the felt
+  performance of the product, but `--help` must stay complete. The commentary in `index.ts`
+  names both constraints and the test that holds them.
 - **`cli/ui/` is the only place that imports `@clack/prompts`, `cli-table3`, or `boxen`
   directly.** Commands call `renderTable`/`panel`/`promptSelect` etc. rather than the raw
   libraries, so a future rendering-library swap (if one is ever justified) touches one module,

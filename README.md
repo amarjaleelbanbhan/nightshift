@@ -65,8 +65,14 @@ the full 1.0.0 roadmap.
 
 **Partially implemented**
 
-- Claude Code integration: detection only (`doctor` reports whether `~/.claude/settings.json`
-  exists). No settings are read or written.
+- Claude Code integration: **read-only, and permanently so by decision** (#18). `doctor` reports
+  whether `~/.claude/settings.json` exists, and compares Claude Code's own light/dark `theme`
+  setting against the active theme's background luminance — because when those disagree, Claude
+  Code renders light-theme syntax colours on a dark terminal and nothing else tells you why.
+  NIGHTSHIFT reads exactly one key (`theme`) and **never writes the file**. The file can hold
+  `env`, `permissions` and `hooks`, any of which may contain a token, so everything else is
+  discarded at the schema boundary rather than risked in a `doctor` report you might paste into
+  a bug thread.
 - Font management: detection only. NIGHTSHIFT reads the installed font families out of Windows'
   font directories and can tell you whether a family is present; it does **not** install,
   download or remove fonts. Nerd Font flagging is a name-based heuristic (see "Known

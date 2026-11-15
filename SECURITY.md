@@ -9,6 +9,11 @@ an issue if that's unavailable. Do not include exploit details in a public issue
 
 - Validates every theme and profile (built-in or user-supplied) against a Zod schema before
   using it. Malformed or unexpected fields are rejected, not coerced.
+- Caps every JSON file it reads off disk — user themes, user and bundled profiles,
+  `config.json`, and profile imports — at 64 KB (`MAX_JSON_FILE_BYTES` in
+  `src/security/limits.ts`). The size is checked before the file is read, so an oversized or
+  multi-gigabyte file is never loaded into memory. Windows Terminal's own `settings.json` is
+  deliberately exempt (see `docs/SECURITY-MODEL.md`).
 - Resolves every user- or file-supplied path (user theme filenames, backup ids) through
   `resolveSafePath`, which rejects anything that resolves outside its intended directory
   (`src/security/paths.ts`). This blocks `../../`-style traversal.
@@ -29,6 +34,26 @@ an issue if that's unavailable. Do not include exploit details in a public issue
 - `profile apply`/`theme apply` restore the pre-apply backup not just when the terminal write
   fails, but also when the subsequent NIGHTSHIFT config update fails — the two are never left
   disagreeing with each other.
+- Makes no assumptions about the shape of Windows Terminal's `settings.json` beyond "the root
+  is a JSON object". Entries in `schemes` that are not objects are passed through untouched
+  rather than having properties read off them, so an unusual or hand-edited `settings.json`
+  cannot crash `theme apply` — and nothing NIGHTSHIFT does not understand is deleted.
+
+## Dependency advisories
+
+`npm audit` currently reports **0 vulnerabilities** (down from 10 — 7 moderate, 1 high,
+2 critical — before the 2026-11-15 remediation).
+
+- The one **runtime**-reachable advisory, high-severity GHSA-mrhx-c7xc-m3w5 in `zod` 3.x, is
+  cleared by upgrading to `zod@^4`. No validation was weakened in the migration.
+- The critical `tinypool` and moderate `@vitest/mocker` advisories were `vitest` 3
+  devDependencies, cleared by `vitest@^5`. They never shipped to users.
+- The moderate `minimatch` advisory reached us through `@typescript-eslint` and has no
+  upstream fix yet; it is held at a fixed version by a narrowly scoped `overrides` entry in
+  `package.json`, to be removed when `@typescript-eslint` ships a fixed release.
+
+See `docs/SECURITY-MODEL.md` for the full reasoning and
+`docs/development/SECURITY_AUDIT.md` for the underlying audit.
 
 ## Known limitations
 
@@ -42,5 +67,12 @@ an issue if that's unavailable. Do not include exploit details in a public issue
   the user's original key ordering or formatting style, only the data.
 - There is no code-signing or integrity verification for themes/profiles yet, since there is
   no remote registry to fetch them from in this release.
+- Destination symlink checks happen just before the write, so there is a small
+  check-to-use window in which the target could be swapped for a symlink. Closing it is not
+  possible portably with Node's synchronous `fs` API, and an attacker would already need
+  write access to the same directory, so no privilege is gained. Documented, not fixed.
+- Windows Terminal's `settings.json` is read without a size cap (NIGHTSHIFT's own JSON files
+  are capped at 64 KB), and `nightshift backup restore` trusts the `originalPath` recorded in
+  its own backup metadata without re-validating it.
 
 This project has not had an external security audit. Treat it as early-stage software.

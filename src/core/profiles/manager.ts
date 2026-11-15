@@ -7,9 +7,7 @@ import { getTheme } from "../themes/registry.js";
 import { resolveSafePath, assertNotSymlink } from "../../security/paths.js";
 import { atomicWriteFileSync } from "../../utils/atomicWrite.js";
 import { readConfig, writeConfig } from "../config/store.js";
-
-/** Generous enough for a profile JSON (a handful of short strings), tight enough to reject abuse. */
-const MAX_IMPORT_BYTES = 64 * 1024;
+import { MAX_JSON_FILE_BYTES } from "../../security/limits.js";
 
 export interface ProfileFileResult {
   ok: boolean;
@@ -33,10 +31,12 @@ export function importProfile(
   if (!stat.isFile()) {
     return { ok: false, message: `"${sourcePath}" is not a regular file.` };
   }
-  if (stat.size > MAX_IMPORT_BYTES) {
+  // Checked here rather than via readJsonFileWithLimit so import can report a friendly
+  // message instead of throwing, and so the stat already taken for isFile() is reused.
+  if (stat.size > MAX_JSON_FILE_BYTES) {
     return {
       ok: false,
-      message: `"${sourcePath}" is ${stat.size} bytes, which exceeds the ${MAX_IMPORT_BYTES}-byte profile import limit.`,
+      message: `"${sourcePath}" is ${stat.size} bytes, which exceeds the ${MAX_JSON_FILE_BYTES}-byte profile import limit.`,
     };
   }
 
@@ -49,7 +49,9 @@ export function importProfile(
 
   const result = safeParseProfile(raw);
   if (!result.success) {
-    const issues = result.error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`);
+    const issues = result.error.issues.map(
+      (issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`,
+    );
     return { ok: false, message: `Invalid profile:\n  ${issues.join("\n  ")}` };
   }
   const profile = result.data;
@@ -62,7 +64,10 @@ export function importProfile(
   }
 
   if (isBuiltinProfileId(profile.id)) {
-    return { ok: false, message: `"${profile.id}" is a built-in profile id and cannot be overwritten.` };
+    return {
+      ok: false,
+      message: `"${profile.id}" is a built-in profile id and cannot be overwritten.`,
+    };
   }
 
   const destDir = getUserProfilesDir();
@@ -116,7 +121,12 @@ export function exportProfile(
     return { ok: false, message: `Failed to export profile: ${(error as Error).message}` };
   }
 
-  return { ok: true, message: `Exported "${id}" to "${destPath}".`, profile: result.data, path: destPath };
+  return {
+    ok: true,
+    message: `Exported "${id}" to "${destPath}".`,
+    profile: result.data,
+    path: destPath,
+  };
 }
 
 export function removeProfile(id: string): ProfileFileResult {
@@ -128,10 +138,16 @@ export function removeProfile(id: string): ProfileFileResult {
   }
 
   const filePath = resolveSafePath(getUserProfilesDir(), `${id}.json`);
+
+  // Read the config *before* unlinking (A-10). `readConfig()` throws on a corrupt config.json,
+  // and with the unlink first that throw left the profile file already deleted and the config
+  // still pointing at it - the one state this function exists to prevent. Reading first means a
+  // corrupt config aborts the removal entirely instead of half-performing it.
+  const config = readConfig();
+
   fs.unlinkSync(filePath);
 
   // Don't leave config pointing at a profile that no longer exists.
-  const config = readConfig();
   if (config.activeProfileId === id) {
     writeConfig({ ...config, activeProfileId: null });
   }

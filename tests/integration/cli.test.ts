@@ -8,7 +8,10 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const cliEntry = path.resolve(__dirname, "../../dist/index.js");
 
-function runCli(args: string[], env: Record<string, string | undefined> = process.env): {
+function runCli(
+  args: string[],
+  env: Record<string, string | undefined> = process.env,
+): {
   stdout: string;
   status: number;
 } {
@@ -68,6 +71,17 @@ describe("CLI (built dist/index.js)", () => {
     expect(stdout).toContain("ghost-protocol-default");
   });
 
+  it("exits promptly instead of hanging when run with no args in a non-TTY context", () => {
+    const start = Date.now();
+    const stdout = execFileSync(process.execPath, [cliEntry], {
+      encoding: "utf8",
+      input: "",
+      timeout: 5000,
+    });
+    expect(Date.now() - start).toBeLessThan(5000);
+    expect(stdout).toContain("Non-interactive environment detected");
+  });
+
   it("shows a profile's details", () => {
     const { stdout, status } = runCli(["profile", "show", "ghost-protocol-default"]);
     expect(status).toBe(0);
@@ -96,7 +110,10 @@ describe("CLI profile import/export/apply (isolated environment)", () => {
       "LocalState",
     );
     fs.mkdirSync(pkgDir, { recursive: true });
-    fs.writeFileSync(path.join(pkgDir, "settings.json"), JSON.stringify({ profiles: { defaults: {} } }));
+    fs.writeFileSync(
+      path.join(pkgDir, "settings.json"),
+      JSON.stringify({ profiles: { defaults: {} } }),
+    );
 
     env = { ...process.env, LOCALAPPDATA: localAppData, APPDATA: appData };
   });
@@ -109,7 +126,12 @@ describe("CLI profile import/export/apply (isolated environment)", () => {
     const sourceFile = path.join(tmpRoot, "custom.json");
     fs.writeFileSync(
       sourceFile,
-      JSON.stringify({ id: "cli-custom", schemaVersion: "1.0", name: "CLI Custom", themeId: "redline" }),
+      JSON.stringify({
+        id: "cli-custom",
+        schemaVersion: "1.0",
+        name: "CLI Custom",
+        themeId: "redline",
+      }),
     );
 
     const imported = runCli(["profile", "import", sourceFile], env);

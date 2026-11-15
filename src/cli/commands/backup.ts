@@ -1,40 +1,63 @@
 import chalk from "chalk";
 import { createBackup, listBackups, restoreBackup } from "../../backup/manager.js";
 import { detectCapabilities } from "../../core/capabilities/detect.js";
+import { renderTable } from "../ui/table.js";
+import { failWith, successMessage, emptyState } from "../ui/feedback.js";
+import { NightshiftError, EXIT_FAILURE } from "../errors.js";
 
 export function runBackupCreate(): void {
   const caps = detectCapabilities();
   const settingsPath = caps.windowsTerminal.settingsPath;
   if (!settingsPath) {
-    console.error(chalk.red("No Windows Terminal settings.json detected to back up."));
-    process.exitCode = 1;
+    failWith(
+      "No Windows Terminal settings.json detected to back up.",
+      "Run `nightshift doctor` to see whether Windows Terminal was detected on this machine.",
+    );
     return;
   }
   const backup = createBackup(settingsPath, "manual backup");
-  console.log(chalk.green(`Backup created: ${backup.id}`));
+  console.log(successMessage(`Backup created: ${backup.id}`));
   console.log(chalk.gray(`Source: ${settingsPath}`));
 }
 
 export function runBackupList(): void {
   const backups = listBackups();
   if (backups.length === 0) {
-    console.log(chalk.gray("No backups found."));
+    console.log(
+      emptyState(
+        "No backups found.",
+        "Run `nightshift backup create` to snapshot your current Windows Terminal settings.",
+      ),
+    );
     return;
   }
-  console.log(chalk.bold("Backups (newest first):"));
-  for (const backup of backups) {
-    console.log(`  ${chalk.cyan(backup.id)}`);
-    console.log(`    ${chalk.gray(`${backup.createdAt} — ${backup.reason}`)}`);
-    console.log(`    ${chalk.gray(backup.originalPath)}`);
-  }
+  console.log(
+    renderTable(
+      ["ID", "Created", "Reason", "Source"],
+      backups.map((backup) => [
+        chalk.cyan(backup.id),
+        backup.createdAt,
+        backup.reason,
+        chalk.gray(backup.originalPath),
+      ]),
+    ),
+  );
 }
 
 export function runRestore(backupId: string): void {
+  // Adds the next step and rethrows rather than printing: the top-level handler in
+  // src/cli/errors.ts stays the only place that renders a failure and sets the exit code
+  // (A-11). An unknown id, a missing snapshot, and a traversal attempt (UnsafePathError) all
+  // have the same remedy, so one hint covers them.
+  let metadata;
   try {
-    const metadata = restoreBackup(backupId);
-    console.log(chalk.green(`Restored ${metadata.originalPath} from backup ${backupId}.`));
+    metadata = restoreBackup(backupId);
   } catch (error) {
-    console.error(chalk.red((error as Error).message));
-    process.exitCode = 1;
+    throw new NightshiftError(
+      (error as Error).message,
+      EXIT_FAILURE,
+      "Run `nightshift backup list` to see available backup ids.",
+    );
   }
+  console.log(successMessage(`Restored ${metadata.originalPath} from backup ${backupId}.`));
 }

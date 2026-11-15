@@ -7,14 +7,36 @@ on:
 
 jobs:
   test:
+    # windows-latest is the ONLY OS on purpose. docs/PLATFORM-COMPATIBILITY.md and
+    # ROADMAP_STATUS.md state that Linux and macOS are not implemented; adding them here, even
+    # as non-blocking informational jobs, would advertise support the product disclaims.
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The low rail is pinned to 22.12.0 exactly, not "22", so the job tests the declared
+        # engines floor rather than whatever 22.x happens to be current. The floor itself comes
+        # from boxen@9 / slice-ansi@9 (`>=22`) bounded by vitest@5 (`^22.12.0 || ^24.0.0 ||
+        # >=26.0.0`) - see docs/development/DEPENDENCY_AUDIT.md.
+        node-version: ["22.12.0", "24", "26"]
+    name: test (node ${{ matrix.node-version }})
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # v5, not v4: the v4 actions declare the Node 20 action runtime, which GitHub has
+      # deprecated and now force-runs on Node 24, emitting a warning annotation on every job.
+      # Pinning v5 removes the annotation and avoids a break when the shim is withdrawn.
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: "20"
-      - run: npm install
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      # npm ci, not npm install: the committed lockfile must be enforced. The minimatch@11
+      # override that holds a moderate advisory closed is not recorded in package-lock.json as
+      # an `overrides` object - it survives only as the resolved dependency entry - so an
+      # unenforced lockfile could silently reopen that advisory.
+      - run: npm ci
+      - run: npm run format:check
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build
       - run: npm test
+      - run: npm audit --audit-level=moderate

@@ -87,7 +87,12 @@ describe("profile apply", () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(
       path.join(dir, "drifted.json"),
-      JSON.stringify({ id: "drifted", schemaVersion: "1.0", name: "Drifted", themeId: "does-not-exist-anymore" }),
+      JSON.stringify({
+        id: "drifted",
+        schemaVersion: "1.0",
+        name: "Drifted",
+        themeId: "does-not-exist-anymore",
+      }),
     );
 
     const result = applyProfile("drifted");

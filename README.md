@@ -27,8 +27,13 @@ status of the full 1.0.0 roadmap.
 - Backup and restore for Windows Terminal's `settings.json`.
 - Environment/capability detection (`doctor`, `status`) — reports what was actually detected,
   not what's assumed, and now also reports active profile and user-profile-directory health.
-- Interactive home menu (`nightshift` with no args) with unimplemented sections clearly
-  labeled instead of faked.
+- Interactive home menu (`nightshift` with no args), grouped into Workspace / Customization /
+  Integrations / System, with unimplemented sections clearly labeled instead of faked. Built on
+  `@clack/prompts`; falls back to printing status and exiting if run without a real terminal
+  (CI, pipes) instead of hanging.
+- One-shot commands (`status`, `doctor`, `theme list`, `profile list`, `backup list`) render
+  through a shared, terminal-width-aware table/panel design system (`cli-table3` + `boxen`)
+  instead of hand-built padded strings.
 
 **Partially implemented**
 

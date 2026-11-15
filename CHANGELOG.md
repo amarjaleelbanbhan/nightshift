@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- Modern CLI redesign: interactive menu now uses `@clack/prompts` (replacing
+  `@inquirer/prompts`) with a grouped Workspace/Customization/Integrations/System navigation
+  structure instead of a flat command list. One-shot commands (`status`, `doctor`,
+  `theme list`, `profile list`, `backup list`) now render through a shared, terminal-width-aware
+  table component (`cli-table3`) and a themed panel (`boxen`) instead of hand-built padded
+  strings. The old two-line ASCII wordmark banner is gone; `status` now shows a compact themed
+  identity panel instead.
+- `theme apply`'s previous internal structure is unchanged; only display code was touched.
+
+### Fixed
+
+- The interactive home screen (`nightshift` with no args) would hang indefinitely when run
+  with non-TTY stdin (CI, pipes, redirected output) because the prompt library has nothing to
+  read. It now detects this and prints the status summary instead of entering any prompt.
+
+See `ROADMAP_STATUS.md` for the full library-evaluation writeup and what's still unverified
+(the actual interactive arrow-key experience needs a manual check in a real terminal).
+
 ## [0.2.0] - 2026-11-09
 
 ### Added

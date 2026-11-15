@@ -1,36 +1,51 @@
 import chalk from "chalk";
 import os from "node:os";
-import { readConfig, isInitialized } from "../../core/config/store.js";
+import { tryReadConfig, isInitialized } from "../../core/config/store.js";
 import { detectCapabilities } from "../../core/capabilities/detect.js";
 import { getTheme } from "../../core/themes/registry.js";
 import { getProfile } from "../../core/profiles/registry.js";
-import { version } from "../version.js";
-import { renderBanner } from "../../banners/startup.js";
+import { renderStatusPanel } from "../../banners/startup.js";
+import { renderTable } from "../ui/table.js";
+import { reportConfigCorrupt } from "../errors.js";
 
 export function runStatus(): void {
   const caps = detectCapabilities();
-  const config = isInitialized() ? readConfig() : null;
+  // `status` is one of the commands a user runs *because* something is wrong, so a corrupt
+  // config.json degrades the active-theme/profile rows rather than killing the report. The
+  // corruption is named on stderr and reflected in the exit code, so it is never silent.
+  const configResult = tryReadConfig();
+  const config = configResult.ok ? configResult.config : null;
   const activeTheme = config?.activeThemeId ? getTheme(config.activeThemeId) : undefined;
-
-  console.log(renderBanner(activeTheme));
-  console.log(`${chalk.gray("Version:")}        ${version}`);
-  console.log(`${chalk.gray("OS:")}             ${os.platform()} ${os.release()}`);
-  console.log(
-    `${chalk.gray("Windows Terminal:")} ${describe(caps.windowsTerminal.support, caps.windowsTerminal.settingsPath)}`,
-  );
-  console.log(
-    `${chalk.gray("Claude Code:")}      ${describe(caps.claudeCode.support, caps.claudeCode.settingsPath)}`,
-  );
-  console.log(
-    `${chalk.gray("Config:")}         ${isInitialized() ? chalk.green("initialized") : chalk.yellow("not initialized (run `nightshift init`)")}`,
-  );
-  console.log(
-    `${chalk.gray("Active theme:")}   ${activeTheme ? activeTheme.name : chalk.gray("none")}`,
-  );
   const activeProfile = config?.activeProfileId ? getProfile(config.activeProfileId) : undefined;
+
+  console.log(renderStatusPanel(activeTheme));
   console.log(
-    `${chalk.gray("Active profile:")} ${activeProfile ? activeProfile.profile.name : chalk.gray("none")}`,
+    renderTable(
+      ["Field", "Value"],
+      [
+        ["OS", `${os.platform()} ${os.release()}`],
+        [
+          "Windows Terminal",
+          describe(caps.windowsTerminal.support, caps.windowsTerminal.settingsPath),
+        ],
+        ["Claude Code", describe(caps.claudeCode.support, caps.claudeCode.settingsPath)],
+        [
+          "Config",
+          !configResult.ok
+            ? chalk.red("corrupt or unreadable")
+            : isInitialized()
+              ? chalk.green("initialized")
+              : chalk.yellow("not initialized (run `nightshift init`)"),
+        ],
+        ["Active theme", activeTheme ? activeTheme.name : chalk.gray("none")],
+        ["Active profile", activeProfile ? activeProfile.profile.name : chalk.gray("none")],
+      ],
+    ),
   );
+
+  if (!configResult.ok) {
+    reportConfigCorrupt(configResult.error);
+  }
 }
 
 function describe(support: string, locatedPath: string | null): string {

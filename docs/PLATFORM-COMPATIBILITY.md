@@ -18,5 +18,26 @@ Capability detection (`src/core/capabilities/detect.ts`) reports `supported` / `
 `settings.json` exists at a known Windows Terminal path). It does not report `supported`
 just because a schema field exists for a setting.
 
+## Font detection
+
+| Platform | Status | Tested on |
+|---|---|---|
+| Windows 11 | Supported — reads `%LOCALAPPDATA%\Microsoft\Windows\Fonts` and `%WINDIR%\Fonts` | Windows 11 Pro 10.0.22631 (200 families found) |
+| macOS, Linux, anything else | `unsupported` — reported as such, not reported as "no fonts" | — |
+
+`src/core/fonts/detect.ts` parses each font file's sfnt `name` table rather than consulting the
+registry, so a font installed by dropping a file into one of those two directories is found, and
+a font registered in the registry but absent from both directories is not. Neither directory
+present reports `unknown` rather than an empty list — "no font directory could be located" and
+"no fonts installed" are different answers and must not look the same.
+
+Nerd Font flagging is a name-based heuristic (family name contains "Nerd Font" or an "NF"
+token). Glyph coverage is never inspected, on any platform. `font list` prints that caveat with
+its own output.
+
+Font *installation* is not implemented on any platform. It writes outside NIGHTSHIFT's own
+config directory, so it needs the shown-proposal-and-approval flow that `setup` has, and that
+has not been built.
+
 Ghostty officially supports macOS and Linux, not Windows — NIGHTSHIFT does not claim Ghostty
 integration on Windows.

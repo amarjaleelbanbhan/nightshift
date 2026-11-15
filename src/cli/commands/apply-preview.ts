@@ -32,8 +32,16 @@ import { failWith, warnMessage, emptyState } from "../ui/feedback.js";
 export interface PreviewChange {
   /** The key path inside settings.json, as a user would find it in the file. */
   path: string;
-  /** `add` when the key is absent today, `replace` when it holds a value already. */
-  action: "add" | "replace";
+  /**
+   * `add` when the key is absent today, `replace` when it holds a different value, and
+   * `unchanged` when the merge writes the same value that is already there.
+   *
+   * `unchanged` exists because the merge really does write those keys, so omitting them would
+   * under-report what the command touches - but calling them `replace` reads as `14 -> 14`,
+   * which is noise in the one command whose whole purpose is saying precisely what changes. A
+   * preview that lists non-changes trains the reader to skim it.
+   */
+  action: "add" | "replace" | "unchanged";
   /** The current value, when there is one to show. */
   from?: string;
   /** The value that would be written. */
@@ -72,9 +80,45 @@ function quoteOrOmit(value: unknown): string | undefined {
   return isPresent(value) ? `(a ${Array.isArray(value) ? "list" : typeof value})` : undefined;
 }
 
+/** Key-order-independent structural comparison, so a hand-reordered file is not a false change. */
+function sameValue(a: unknown, b: unknown): boolean {
+  const stable = (v: unknown): string =>
+    JSON.stringify(v, (_k, val) =>
+      val !== null && typeof val === "object" && !Array.isArray(val)
+        ? Object.fromEntries(
+            Object.entries(val as Record<string, unknown>).sort(([x], [y]) => x.localeCompare(y)),
+          )
+        : val,
+    );
+  return stable(a) === stable(b);
+}
+
+/**
+ * Compares the scheme entry the merge produced against the one already in the file.
+ *
+ * Presence of the name is not enough: re-applying the active theme leaves the scheme byte
+ * identical, and reporting that as `replace` made the "nothing would change" case unreachable.
+ */
+function schemeAction(
+  existingSchemes: unknown[],
+  mergedSchemes: unknown,
+  name: string,
+): PreviewChange["action"] {
+  const byName = (list: unknown[]): unknown => list.find((s) => plainObject(s).name === name);
+  const before = byName(existingSchemes);
+  if (before === undefined) return "add";
+  const after = byName(Array.isArray(mergedSchemes) ? mergedSchemes : []);
+  return sameValue(before, after) ? "unchanged" : "replace";
+}
+
 function change(path: string, current: unknown, to: string): PreviewChange {
   const from = quoteOrOmit(current);
-  return from === undefined ? { path, action: "add", to } : { path, action: "replace", from, to };
+  if (from === undefined) return { path, action: "add", to };
+  // Both sides are already formatted by quoteOrOmit, so comparing the rendered strings is
+  // type-agnostic: it works for the string colorScheme and the numeric font.size alike,
+  // without needing to know which is which here.
+  if (from === to) return { path, action: "unchanged", from, to };
+  return { path, action: "replace", from, to };
 }
 
 /**
@@ -91,13 +135,15 @@ export function buildApplyPreview(themeId: string, subject: string): ApplyPrevie
   const { theme, target } = resolved;
 
   let current: Record<string, unknown>;
+  let merged: Record<string, unknown>;
   try {
     current = readWindowsTerminalSettings(target.path);
-    // Run the real merge and throw the result away. It is the only authority on whether this
-    // file can be rewritten at all - it refuses a legacy array `profiles`, a string
-    // `profiles.defaults` and so on - and running it here turns `--dry-run` into a genuine
-    // pre-flight check instead of a second opinion about the same file.
-    mergeThemeIntoSettings(current, theme);
+    // Run the real merge. It is the only authority on whether this file can be rewritten at
+    // all - it refuses a legacy array `profiles`, a string `profiles.defaults` and so on - so
+    // running it here turns `--dry-run` into a genuine pre-flight check rather than a second
+    // opinion about the same file. The result is also what the scheme comparison below is
+    // measured against, so the preview describes the actual merge instead of re-deriving it.
+    merged = mergeThemeIntoSettings(current, theme);
   } catch (error) {
     return { ok: false, message: (error as Error).message };
   }
@@ -109,7 +155,7 @@ export function buildApplyPreview(themeId: string, subject: string): ApplyPrevie
   const changes: PreviewChange[] = [
     {
       path: `schemes[] (name "${theme.name}")`,
-      action: schemes.some((s) => plainObject(s).name === theme.name) ? "replace" : "add",
+      action: schemeAction(schemes, merged.schemes, theme.name),
       to: `background ${theme.colors.background}, foreground ${theme.colors.foreground} + 16 ANSI colors`,
     },
     change("profiles.defaults.colorScheme", defaults.colorScheme, `"${theme.name}"`),
@@ -149,8 +195,13 @@ export function buildApplyPreview(themeId: string, subject: string): ApplyPrevie
 /** Renders the preview as the list of writes it describes. Writes nothing. */
 export function renderApplyPreview(preview: ApplyPreview): string {
   const width = Math.max(...preview.changes.map((c) => c.path.length));
+  const effective = preview.changes.filter((c) => c.action !== "unchanged");
+  const nothingWouldChange = effective.length === 0;
+
   const lines = [
-    `${chalk.bold("Dry run")} ${chalk.gray(`- \`${preview.subject}\` would change:`)}`,
+    nothingWouldChange
+      ? `${chalk.bold("Dry run")} ${chalk.gray(`- \`${preview.subject}\` would change nothing:`)}`
+      : `${chalk.bold("Dry run")} ${chalk.gray(`- \`${preview.subject}\` would change:`)}`,
     "",
     `  ${preview.target}`,
     `  ${chalk.gray(`-> backed up first into ${preview.backupsDir}`)}`,
@@ -158,9 +209,31 @@ export function renderApplyPreview(preview: ApplyPreview): string {
   ];
 
   for (const c of preview.changes) {
-    const marker = c.action === "add" ? chalk.green("+ add    ") : chalk.yellow("~ replace");
-    const value = c.from ? `${chalk.gray(c.from)} ${chalk.gray("->")} ${c.to}` : c.to;
+    const marker =
+      c.action === "add"
+        ? chalk.green("+ add    ")
+        : c.action === "replace"
+          ? chalk.yellow("~ replace")
+          : chalk.gray("= same   ");
+    const value =
+      c.action === "unchanged"
+        ? chalk.gray(c.to)
+        : c.from
+          ? `${chalk.gray(c.from)} ${chalk.gray("->")} ${c.to}`
+          : c.to;
     lines.push(`  ${marker}  ${chalk.cyan(c.path.padEnd(width))}  ${value}`);
+  }
+
+  if (nothingWouldChange) {
+    // Worth stating outright rather than leaving the reader to infer it from a list of
+    // `= same` lines: "this theme is already applied" is a genuinely useful answer to
+    // "what would this do", and it is the whole result in that case.
+    lines.push(
+      "",
+      chalk.gray(
+        `"${preview.themeName}" is already applied to that file - every key the merge writes already holds the value it would write.`,
+      ),
+    );
   }
 
   lines.push(

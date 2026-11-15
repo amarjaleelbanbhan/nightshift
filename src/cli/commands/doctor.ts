@@ -116,16 +116,49 @@ function activeThemeFontCheck(configResult: ConfigReadResult): Check {
   };
 }
 
+/**
+ * The single source of truth for the runtime floor *inside the code*. It must stay equal to
+ * `engines.node` in package.json and the low rail of the CI matrix. 22.12.0 rather than 22.0.0
+ * because vitest 5 cannot run below it, so 22.0.0-22.11.x could never be exercised by this
+ * project's own suite - declaring a floor that cannot be tested is the same false promise as
+ * declaring one that is too low.
+ */
+export const MIN_NODE_VERSION = "22.12.0";
+
+/**
+ * Compares a Node version string against MIN_NODE_VERSION.
+ *
+ * Takes the version as an argument instead of reading `process.versions.node` itself, which is
+ * why this exists as a separate function: the previous check compared `major >= 18` inline, so
+ * no test could exercise any runtime other than the one running the suite. That is exactly how
+ * it kept reporting `ok` on Node 18 and 20 after the floor moved to 22.12.0 - `doctor` told the
+ * user their environment was fine while `npm install` was refusing it with EBADENGINE.
+ *
+ * Unparseable input returns false: failing closed on a version we cannot read is safer than
+ * claiming support for it.
+ */
+export function meetsNodeFloor(version: string): boolean {
+  const required = MIN_NODE_VERSION.split(".").map(Number);
+  const actual = version.split(".").map((part) => Number.parseInt(part, 10));
+  if (actual.length < 3 || actual.some((n) => !Number.isFinite(n))) return false;
+
+  for (let i = 0; i < 3; i += 1) {
+    const a = actual[i] ?? 0;
+    const r = required[i] ?? 0;
+    if (a !== r) return a > r;
+  }
+  return true;
+}
+
 export function runDoctor(): void {
   const caps = detectCapabilities();
   const configResult = tryReadConfig();
   const checks: Check[] = [];
 
-  const [major] = process.versions.node.split(".").map(Number);
   checks.push({
     label: "Node.js version",
-    status: major !== undefined && major >= 18 ? "ok" : "fail",
-    detail: `v${process.versions.node} (requires >=18)`,
+    status: meetsNodeFloor(process.versions.node) ? "ok" : "fail",
+    detail: `v${process.versions.node} (requires >=${MIN_NODE_VERSION})`,
   });
 
   checks.push({
@@ -139,12 +172,10 @@ export function runDoctor(): void {
 
   checks.push({
     label: "Windows Terminal",
-    status:
-      caps.windowsTerminal.support === "supported"
-        ? "ok"
-        : caps.platform === "win32"
-          ? "warn"
-          : "warn",
+    // Both arms of the old `caps.platform === "win32" ? "warn" : "warn"` ternary were identical,
+    // so the platform test was dead. The distinction it was reaching for is already carried by
+    // the Platform support check above and by the detail line below.
+    status: caps.windowsTerminal.support === "supported" ? "ok" : "warn",
     detail: caps.windowsTerminal.settingsPath ?? "settings.json not found",
   });
 

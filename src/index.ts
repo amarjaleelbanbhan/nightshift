@@ -169,6 +169,12 @@ backup
   .command("list")
   .description("List existing backups")
   .action(async () => (await backupModule()).runBackupList());
+// Also under `backup`, not only at the top level. Anyone who has just run `backup list` and
+// has an id in hand types `backup restore <id>` next, and used to get "unknown command".
+backup
+  .command("restore <backupId>")
+  .description("Restore a previous backup by id (same as `nightshift restore`)")
+  .action(async (backupId: string) => (await backupModule()).runRestore(backupId));
 
 // Tab completion. `powershell` is a subcommand rather than an argument so that
 // `completion values` can live beside it without the two being ambiguous, and so

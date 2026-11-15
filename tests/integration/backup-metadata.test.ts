@@ -204,4 +204,54 @@ describe("backup metadata validation", () => {
       expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
     });
   });
+
+  describe("redirected restore destination (#23)", () => {
+    /**
+     * The destination comes out of `metadata.json`, so a poisoned `originalPath` steers the
+     * write even though that file is Zod-validated and symlink-checked. Automatic rollbacks run
+     * without the user asking for them, so they pass the path they backed up and the write is
+     * refused when the two disagree.
+     */
+    function poisonDestination(id: string, destination: string): void {
+      poison(
+        id,
+        JSON.stringify({
+          id,
+          createdAt: new Date().toISOString(),
+          originalPath: destination,
+          reason: "reason",
+        }),
+      );
+    }
+
+    it("refuses when metadata points somewhere the caller did not ask for", () => {
+      const elsewhere = path.join(tmpRoot, "elsewhere.json");
+      const backup = createBackup(targetFile, "reason");
+      poisonDestination(backup.id, elsewhere);
+
+      expect(() => restoreBackup(backup.id, targetFile)).toThrow(/did not ask for/);
+      expect(fs.existsSync(elsewhere)).toBe(false);
+    });
+
+    it("restores when metadata and the caller agree, modulo path spelling", () => {
+      const backup = createBackup(targetFile, "reason");
+      fs.writeFileSync(targetFile, "CHANGED");
+      // Same file, differently spelled: the comparison resolves both sides rather than
+      // comparing strings, so a `.` segment is not mistaken for a redirect.
+      const indirect = path.join(path.dirname(targetFile), ".", path.basename(targetFile));
+
+      expect(restoreBackup(backup.id, indirect).id).toBe(backup.id);
+      expect(JSON.parse(fs.readFileSync(targetFile, "utf8"))).toEqual({ original: true });
+    });
+
+    it("still restores from metadata alone when no destination is expected", () => {
+      // `backup restore <id>` is "put it back where it came from", so the metadata path is the
+      // request, not an input to be second-guessed. It is printed before the write instead.
+      const backup = createBackup(targetFile, "reason");
+      fs.writeFileSync(targetFile, "CHANGED");
+
+      expect(restoreBackup(backup.id).originalPath).toBe(targetFile);
+      expect(JSON.parse(fs.readFileSync(targetFile, "utf8"))).toEqual({ original: true });
+    });
+  });
 });

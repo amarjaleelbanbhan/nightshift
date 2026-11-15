@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import { createBackup, listBackups, restoreBackup } from "../../backup/manager.js";
+import { createBackup, listBackups, readBackup, restoreBackup } from "../../backup/manager.js";
 import { detectCapabilities } from "../../core/capabilities/detect.js";
 import {
   resolveSettingsTarget,
@@ -59,7 +59,14 @@ export function runRestore(backupId: string): void {
   // have the same remedy, so one hint covers them.
   let metadata;
   try {
-    metadata = restoreBackup(backupId);
+    // Name the destination before the write, not after. This is the one restore path that
+    // takes its destination from the backup's own metadata.json rather than being told
+    // (#23), so the file it is about to overwrite is printed while that is still news - and
+    // passing it back as `expectedPath` pins the write to the path that was printed, even if
+    // the metadata changes between the two reads.
+    const target = readBackup(backupId);
+    console.log(chalk.gray(`Restoring ${target.originalPath} from backup ${backupId}...`));
+    metadata = restoreBackup(backupId, target.originalPath);
   } catch (error) {
     throw new NightshiftError(
       (error as Error).message,

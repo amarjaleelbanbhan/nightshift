@@ -87,15 +87,17 @@ destroys user data and declining does not:
   success. It is now refused with a message telling the user to open Windows Terminal's
   settings UI once, which migrates the file properly. Declining is recoverable; a silent
   rewrite is not.
-- **The file contains `//` comments.** Windows Terminal documents `settings.json` as JSONC and
-  its own generated file has carried a comment header. NIGHTSHIFT writes via `JSON.stringify`,
-  which cannot round-trip comments, so it names the file and the cause instead of relaying
-  `Unexpected token /`, and refuses to apply. This is a current limitation, not a fixed bug —
-  tracked as issue #14. The detection pattern requires `//` to open a line, so a URL inside a
-  string value (`"$help": "https://…"`) is not mistaken for a comment.
+A UTF-8 BOM *is* handled (separated before parsing, re-attached on write) rather than refused:
+Notepad saving the file once as "UTF-8 with BOM" is common and the fix is unambiguous.
 
-A UTF-8 BOM *is* handled (stripped before parsing) rather than refused: Notepad saving the file
-once as "UTF-8 with BOM" is common and the fix is unambiguous.
+**Comments and trailing commas are read and preserved** (#14). The file is parsed as JSONC with
+`jsonc-parser`, and the write is a set of targeted text edits to the keys that change rather
+than a `JSON.stringify` of a rebuilt object — so comments, key order, indentation width and
+line endings all come out of the write as they went in, and re-applying an already-applied
+theme produces a byte-identical file. The edited region is reformatted to the file's own
+indentation, which is the one visible cosmetic change: a one-line scheme entry expands across
+lines, and a same-line trailing comment on the last key of an object that gains a key moves to
+the end of that object. No comment text is lost.
 
 A non-array `schemes` becomes an empty list rather than an error, and non-object entries inside
 it are passed through untouched instead of having `.name` read off them. They are kept, not

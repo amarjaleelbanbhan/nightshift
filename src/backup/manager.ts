@@ -76,16 +76,44 @@ export function listBackups(): BackupMetadata[] {
   return entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-/** Restores the file captured by `backupId` back to its original location. */
-export function restoreBackup(backupId: string): BackupMetadata {
-  const backupsDir = getBackupsDir();
-  const entryDir = resolveSafePath(backupsDir, backupId);
+/**
+ * Reads one backup's metadata without restoring anything, so a caller can name the destination
+ * before the write rather than after it. `backup restore` uses it for exactly that.
+ */
+export function readBackup(backupId: string): BackupMetadata {
+  const entryDir = resolveSafePath(getBackupsDir(), backupId);
   const metadataPath = path.join(entryDir, "metadata.json");
-
   if (!fs.existsSync(metadataPath)) {
     throw new Error(`No backup found with id "${backupId}"`);
   }
-  const metadata = readBackupMetadata(metadataPath);
+  return readBackupMetadata(metadataPath);
+}
+
+/**
+ * Restores the file captured by `backupId` back to its original location.
+ *
+ * `expectedPath` is how a caller that already knows the destination says so. The destination
+ * otherwise comes out of `metadata.json`, which is a file on disk: Zod-validated and
+ * symlink-checked, but a syntactically valid string still steers the write, so anyone who can
+ * edit that file can redirect a restore (#23). Every automatic rollback passes the path it
+ * backed up, because those run without the user asking and must not be redirectable; the
+ * user-driven `backup restore` deliberately does not, since "put it back where it came from"
+ * is the whole request - it names the destination first instead.
+ */
+export function restoreBackup(backupId: string, expectedPath?: string): BackupMetadata {
+  const metadata = readBackup(backupId);
+  const entryDir = resolveSafePath(getBackupsDir(), backupId);
+
+  if (
+    expectedPath !== undefined &&
+    path.resolve(metadata.originalPath) !== path.resolve(expectedPath)
+  ) {
+    throw new Error(
+      `Backup "${backupId}" records its original path as "${metadata.originalPath}", but this ` +
+        `restore was expected to write "${expectedPath}". Refusing to write somewhere the ` +
+        "caller did not ask for - check that backup's metadata.json.",
+    );
+  }
 
   const snapshotPath = path.join(entryDir, "snapshot" + path.extname(metadata.originalPath));
   if (!fs.existsSync(snapshotPath)) {

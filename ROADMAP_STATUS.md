@@ -238,9 +238,9 @@ Delivered in this cycle, all verified by execution:
   instead of being converted to an object, which previously destroyed the user's profile list
   while reporting success (`tests/integration/wt-legacy-profiles.test.ts` asserts the file is
   left byte-identical).
-- A `settings.json` containing `//` comments now fails with the file name and the real cause
-  instead of `Unexpected token /`. It still cannot be applied to — a current, real limitation,
-  tracked as issue #14 and listed in `README.md`.
+- A `settings.json` containing `//` comments used to fail with the file name and the real cause
+  instead of `Unexpected token /`, but still could not be applied to. As of 0.4.0 it is read as
+  JSONC and written with targeted text edits, so it applies and the comments survive (#14).
 - `backup list` no longer fails on malformed metadata; one broken entry is skipped rather than
   hiding every good backup. Verified live by planting an invalid `metadata.json` — the listing
   still showed both valid backups.

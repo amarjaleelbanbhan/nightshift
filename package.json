@@ -1,6 +1,6 @@
 {
   "name": "nightshift-cli",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "An open-source developer terminal customization toolkit. Build your own terminal experience with themes, profiles, widgets, and integrations.",
   "license": "MIT",
   "type": "module",
@@ -50,6 +50,7 @@
     "chalk": "^5.4.1",
     "cli-table3": "^0.6.5",
     "commander": "^13.1.0",
+    "jsonc-parser": "^3.3.1",
     "strip-ansi": "^7.2.0",
     "zod": "^4.6.7"
   },

@@ -6,7 +6,7 @@ NIGHTSHIFT is an open-source developer terminal customization toolkit. It's a CL
 configuration layer for the tools you already use — Windows Terminal today, more terminals
 and shells later — not a terminal emulator or a replacement for them.
 
-This is an early (`0.2.0`) development release. It implements a real, working foundation:
+This is an early (`0.4.0`) development release. It implements a real, working foundation:
 theme management (including authoring and validation) and profile management, both with safe
 apply/rollback to Windows Terminal, guided first-run setup, read-only font detection, and
 backup/restore. It does not implement the full long-term vision (marketplace, widgets, Studio,
@@ -22,6 +22,11 @@ the full 1.0.0 roadmap.
 - `theme apply`: writes a theme into Windows Terminal's `settings.json`, preserving every
   unrelated key, with an automatic backup-and-rollback on failure. `--dry-run` shows the exact
   keys it would add or replace, in the file it would really write, and writes nothing.
+- **Your `settings.json` comes back as your file.** `settings.json` is JSONC — the file
+  Windows Terminal generates opens with a `//` header, and plenty of people annotate theirs.
+  NIGHTSHIFT edits only the keys it changes, so comments, key order, indentation width, CRLF
+  and a UTF-8 BOM all survive the write, and re-applying the same theme leaves the file
+  byte-identical. Most theme switchers regenerate the file and quietly drop all of that.
 - Theme authoring: `theme validate` (reports *every* schema problem at once with its field
   path), `theme create` (clones an existing theme into your user themes directory), and
   `theme remove`. A built-in theme id can never be overwritten or removed, with or without
@@ -139,7 +144,7 @@ Run `nightshift` with no arguments for the interactive menu.
 | `nightshift doctor` | Diagnose environment and capability detection |
 | `nightshift backup create` | Back up the current Windows Terminal `settings.json` |
 | `nightshift backup list` | List existing backups |
-| `nightshift restore <backupId>` | Restore a specific backup by id |
+| `nightshift backup restore <backupId>` | Restore a specific backup by id. It prints the file it is about to overwrite before overwriting it. Also available as `nightshift restore <backupId>` |
 | `nightshift completion powershell` | Print a PowerShell Tab-completion script (see "Shell completion" below) |
 | `nightshift completion values <kind>` | Print the ids of one kind (`theme`, `profile`, `backup`), one per line. Used by the generated completion script |
 
@@ -385,11 +390,17 @@ manually:
 ```bash
 nightshift backup create
 nightshift backup list
-nightshift restore <backupId>
+nightshift backup restore <backupId>   # or `nightshift restore <backupId>`
 ```
 
 Backups live under `%APPDATA%\nightshift\backups\<id>\` as a raw file snapshot plus a
 `metadata.json` (original path, reason, timestamp).
+
+`backup restore` writes to the `originalPath` in that `metadata.json` — which is the point of
+the command, so it prints that path *before* the write rather than after it. The automatic
+rollback inside `theme apply` and `profile apply` does not trust that field at all: it passes
+the path it backed up and refuses to write anywhere else, so an edited `metadata.json` cannot
+redirect a rollback nobody asked for (#23).
 
 ## Supported platforms
 
@@ -408,8 +419,14 @@ config field exists for it.
 
 - `theme apply` only targets `profiles.defaults` in Windows Terminal, not per-profile
   overrides.
-- Rewriting `settings.json` does not preserve the original file's formatting/key order, only
-  its data.
+- `theme apply` edits the keys it changes and leaves the rest of the file byte-for-byte alone,
+  with two whitespace exceptions. The edited region is reformatted to the file's own
+  indentation, so a scheme entry written on one line (`{ "name": "Campbell" }`) comes back
+  expanded across lines, and a same-line trailing comment on the last key of an object it
+  appends to moves to the end of that object — the comment text is never lost, only
+  re-attached. And a **fully minified** `settings.json` (no line breaks at all) comes back
+  pretty-printed in its entirety at 4-space indentation, because there is no line boundary for
+  the edit to stop at. Values and comments survive in both cases; only whitespace moves.
 - **A symlinked `settings.json` is followed, so NIGHTSHIFT writes outside the path detection
   reported.** If your `settings.json` is a link into a dotfiles repository, `theme apply`,
   `profile apply` and `setup` resolve the link and write the file it points at, which keeps the
@@ -417,11 +434,6 @@ config field exists for it.
   message, the `setup` proposal, `status`, `doctor` and the backup it snapshots — if the link
   and its target differ, both are shown. A link whose target is missing is refused with the
   link and the missing target named, rather than being replaced by a regular file.
-- **A `settings.json` containing `//` comments cannot be applied to.** Windows Terminal
-  documents its settings file as JSONC and its own generated file has carried a comment header.
-  NIGHTSHIFT writes with `JSON.stringify`, which cannot round-trip comments, so rather than
-  silently deleting them it refuses and names the file and the cause. Remove the comments to
-  apply a theme. Tracked as issue #14.
 - **A legacy pre-1.0 `settings.json` whose `profiles` key is a JSON array is refused**, not
   migrated. Converting it to the current `{ defaults, list }` form would mean guessing at a
   migration of your whole profile list. Open Windows Terminal's settings UI once to let it

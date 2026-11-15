@@ -278,7 +278,10 @@ refuses that outright rather than shadowing a bundled profile.
   never be overwritten or removed, with or without that flag.
 - `profile export <id>` writes a profile's current validated JSON to a file you choose
   (`--output`, default `<id>.json` in the current directory). It never overwrites an existing
-  file without `--overwrite`, and never changes the active profile or theme.
+  file without `--overwrite`, and never changes the active profile or theme. Exporting a
+  **built-in** profile warns that the file cannot be imported as-is, because the export keeps
+  the built-in `id` and import refuses built-in ids: change the `id` field to one of your own
+  and the round trip works. That is the supported way to base a custom profile on a shipped one.
 - `profile apply <id>` resolves the profile's theme and runs it through the exact same
   backup → write → verify → rollback engine as `theme apply`, then records both the active
   profile and theme in NIGHTSHIFT's config in a single atomic write (so they can never
@@ -318,6 +321,13 @@ config field exists for it.
   overrides.
 - Rewriting `settings.json` does not preserve the original file's formatting/key order, only
   its data.
+- **A symlinked `settings.json` is followed, so NIGHTSHIFT writes outside the path detection
+  reported.** If your `settings.json` is a link into a dotfiles repository, `theme apply`,
+  `profile apply` and `setup` resolve the link and write the file it points at, which keeps the
+  link intact and updates your tracked file. The resolved path is what is named in the success
+  message, the `setup` proposal, `status`, `doctor` and the backup it snapshots — if the link
+  and its target differ, both are shown. A link whose target is missing is refused with the
+  link and the missing target named, rather than being replaced by a regular file.
 - **A `settings.json` containing `//` comments cannot be applied to.** Windows Terminal
   documents its settings file as JSONC and its own generated file has carried a comment header.
   NIGHTSHIFT writes with `JSON.stringify`, which cannot round-trip comments, so rather than

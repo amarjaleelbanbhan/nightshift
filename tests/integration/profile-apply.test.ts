@@ -71,6 +71,29 @@ describe("profile apply", () => {
     expect(listBackups().length).toBeGreaterThan(0);
   });
 
+  it("inherits the symlink fix from the shared engine: the link survives (#27)", () => {
+    // `applyProfile` routes through `applyThemeFileOnly`, so it should inherit the fix - but
+    // "should inherit" is a hypothesis until it is run. This is that run.
+    const tracked = path.join(tmpRoot, "dotfiles-settings.json");
+    fs.writeFileSync(tracked, JSON.stringify(originalSettings, null, 2));
+    fs.rmSync(settingsPath);
+    try {
+      fs.symlinkSync(tracked, settingsPath, "file");
+    } catch {
+      // A file symlink on Windows needs Developer Mode or elevation.
+      return;
+    }
+
+    const result = applyProfile("ghost-protocol-default");
+
+    expect(result.ok).toBe(true);
+    expect(fs.lstatSync(settingsPath).isSymbolicLink()).toBe(true);
+    const written = JSON.parse(fs.readFileSync(tracked, "utf8"));
+    expect(written.profiles.defaults.colorScheme).toBe("Ghost Protocol");
+    expect(written.copyOnSelect).toBe(true);
+    expect(listBackups()[0]?.originalPath).toBe(fs.realpathSync(tracked));
+  });
+
   it("fails cleanly for an unknown profile id without touching settings or config", () => {
     const before = fs.readFileSync(settingsPath, "utf8");
     const result = applyProfile("does-not-exist");

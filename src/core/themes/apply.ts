@@ -7,6 +7,10 @@ import {
   writeWindowsTerminalSettings,
   mergeThemeIntoSettings,
 } from "../../adapters/windows-terminal/apply.js";
+import {
+  resolveSettingsTarget,
+  describeSettingsTarget,
+} from "../../adapters/windows-terminal/locate.js";
 
 /**
  * The theme-application engine: it orchestrates the Windows Terminal adapter, the backup
@@ -36,8 +40,8 @@ export function applyThemeFileOnly(id: string): ApplyResult {
   }
 
   const caps = detectCapabilities();
-  const settingsPath = caps.windowsTerminal.settingsPath;
-  if (!settingsPath) {
+  const located = caps.windowsTerminal.settingsPath;
+  if (!located) {
     return {
       ok: false,
       message:
@@ -45,6 +49,13 @@ export function applyThemeFileOnly(id: string): ApplyResult {
         "(Theme application is currently Windows-only.)",
     };
   }
+
+  // Resolve before anything is read, backed up or written, so a symlinked settings.json is
+  // followed to the file it points at instead of being renamed over (#27). Everything below -
+  // including `createBackup`, so a rollback restores to the place the content actually lives -
+  // uses the resolved path; the message names both.
+  const target = resolveSettingsTarget(located);
+  const settingsPath = target.path;
 
   let backup: ReturnType<typeof createBackup>;
   try {
@@ -82,7 +93,7 @@ export function applyThemeFileOnly(id: string): ApplyResult {
 
   return {
     ok: true,
-    message: `Applied "${theme.name}" to Windows Terminal (${settingsPath}).`,
+    message: `Applied "${theme.name}" to Windows Terminal (${describeSettingsTarget(target)}).`,
     backupId: backup.id,
   };
 }

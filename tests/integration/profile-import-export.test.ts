@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { importProfile, exportProfile, removeProfile } from "../../src/core/profiles/manager.js";
+import { runProfileImport } from "../../src/cli/commands/profile.js";
 import { getUserProfilesDir } from "../../src/core/config/paths.js";
 import { readConfig } from "../../src/core/config/store.js";
 
@@ -249,6 +250,90 @@ describe("profile export", () => {
   it("fails cleanly for an unknown profile id", () => {
     const result = exportProfile("does-not-exist", { outputPath: path.join(outDir, "x.json") });
     expect(result.ok).toBe(false);
+  });
+
+  /**
+   * #29: `profile export` produced a file `profile import` refused, and the refusal hint named
+   * `profile export` - the command that produced the rejected file - so following the hint
+   * looped. The refusal itself is a deliberate safety property and stays; what changes is that
+   * the user is told at export time, and the hint names an action that resolves the problem.
+   *
+   * The pre-existing round-trip test uses a *user* profile with a non-colliding id, which is
+   * why this was never caught. These cover a built-in specifically.
+   */
+  describe("export-then-import of a built-in profile (#29)", () => {
+    it("warns at export time that the file cannot be imported as-is", () => {
+      const output = path.join(outDir, "builtin.json");
+      const result = exportProfile("ghost-protocol-default", { outputPath: output });
+
+      expect(result.ok).toBe(true);
+      expect(result.warning).toContain("built-in profile id");
+      expect(result.warning).toContain("cannot be imported as-is");
+      // The warning has to name the remedy, since the export is where the user still has
+      // context - and it must not point back at `profile export`.
+      expect(result.warning).toContain('"id"');
+      expect(result.warning).not.toContain("profile export");
+    });
+
+    it("does not warn when exporting a user profile, whose round trip works", () => {
+      const src = writeSourceFile(
+        outDir,
+        "mine.json",
+        JSON.stringify({
+          id: "mine",
+          schemaVersion: "1.0",
+          name: "Mine",
+          themeId: "ghost-protocol",
+        }),
+      );
+      expect(importProfile(src).ok).toBe(true);
+
+      const output = path.join(outDir, "mine-exported.json");
+      const exported = exportProfile("mine", { outputPath: output });
+      expect(exported.ok).toBe(true);
+      expect(exported.warning).toBeUndefined();
+      expect(importProfile(output, { overwrite: true }).ok).toBe(true);
+    });
+
+    it("still refuses the import, and the hint names changing the id rather than re-exporting", () => {
+      const output = path.join(outDir, "roundtrip.json");
+      exportProfile("ghost-protocol-default", { outputPath: output });
+
+      // The refusal is unchanged - that rule is the safety property, not the bug.
+      const refusal = importProfile(output);
+      expect(refusal.ok).toBe(false);
+      expect(refusal.message).toContain("is a built-in profile id and cannot be overwritten");
+
+      const errors: string[] = [];
+      const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+        errors.push(args.map(String).join(" "));
+      });
+      try {
+        runProfileImport(output, {});
+      } finally {
+        spy.mockRestore();
+        process.exitCode = 0;
+      }
+
+      const text = errors.join("\n");
+      expect(text).toContain("is a built-in profile id and cannot be overwritten");
+      // The circularity guard: following the old hint re-ran the command that produced the
+      // rejected file, so the user looped forever.
+      expect(text).not.toContain("profile export");
+      expect(text).toContain('"id"');
+    });
+
+    it("completes the round trip once the id is changed, which is what the hint says to do", () => {
+      const output = path.join(outDir, "editable.json");
+      exportProfile("ghost-protocol-default", { outputPath: output });
+
+      const exported = JSON.parse(fs.readFileSync(output, "utf8"));
+      fs.writeFileSync(output, JSON.stringify({ ...exported, id: "my-ghost-protocol" }));
+
+      const result = importProfile(output);
+      expect(result.ok).toBe(true);
+      expect(fs.existsSync(path.join(getUserProfilesDir(), "my-ghost-protocol.json"))).toBe(true);
+    });
   });
 
   it("does not mutate NIGHTSHIFT's active configuration", () => {

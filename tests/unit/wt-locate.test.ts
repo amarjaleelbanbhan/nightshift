@@ -2,7 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { locateWindowsTerminalSettings } from "../../src/adapters/windows-terminal/locate.js";
+import {
+  locateWindowsTerminalSettings,
+  resolveSettingsTarget,
+  describeSettingsTarget,
+  describeSettingsPath,
+} from "../../src/adapters/windows-terminal/locate.js";
+import { NightshiftError, EXIT_FAILURE } from "../../src/cli/errors.js";
 
 /**
  * `locateWindowsTerminalSettings` decides which file every theme and profile apply rewrites.
@@ -153,6 +159,91 @@ describe("locateWindowsTerminalSettings", () => {
       // unpackaged install behind it is found instead.
       const unpackaged = install(UNPACKAGED);
       expect(locateWindowsTerminalSettings()).toBe(unpackaged);
+    });
+  });
+
+  /**
+   * `resolveSettingsTarget` is what turns a located path into the path that is actually
+   * written. It is the fix for #27: `atomicWriteFileSync` renames over its target, so writing a
+   * symlinked settings.json replaced the link and left the user's dotfiles-tracked file holding
+   * stale content while the apply reported success.
+   */
+  describe("resolveSettingsTarget", () => {
+    it("returns a plain file unchanged, with no link to report", () => {
+      const file = install(STORE);
+      expect(resolveSettingsTarget(file)).toEqual({ path: file, linkPath: null });
+      expect(describeSettingsTarget(resolveSettingsTarget(file))).toBe(file);
+      expect(describeSettingsPath(file)).toBe(file);
+    });
+
+    it("returns a path that does not exist unchanged, leaving the read to report it", () => {
+      // Not this function's error to name: a missing settings.json has a precise message
+      // already, and inventing a second one here would hide it.
+      const absent = path.join(localAppData, ...STORE, "settings.json");
+      expect(resolveSettingsTarget(absent)).toEqual({ path: absent, linkPath: null });
+    });
+
+    it("follows a symlink to its real target and reports both paths", () => {
+      const target = path.join(tmpRoot, "dotfiles-settings.json");
+      fs.writeFileSync(target, '{"fromDotfiles":true}');
+      const link = path.join(localAppData, ...STORE, "settings.json");
+      fs.mkdirSync(path.dirname(link), { recursive: true });
+      try {
+        fs.symlinkSync(target, link, "file");
+      } catch {
+        // A file symlink on Windows needs Developer Mode or elevation.
+        return;
+      }
+
+      const resolved = resolveSettingsTarget(link);
+
+      expect(resolved).toEqual({ path: fs.realpathSync(target), linkPath: link });
+      // Both paths, every time they differ: writing somewhere other than the path the user was
+      // told about is the same defect as severing the link, in a different costume.
+      expect(describeSettingsTarget(resolved)).toContain(fs.realpathSync(target));
+      expect(describeSettingsTarget(resolved)).toContain(link);
+      expect(describeSettingsPath(link)).toBe(describeSettingsTarget(resolved));
+    });
+
+    it("turns a dangling symlink into a readable error with a next step, not an ENOENT trace", () => {
+      const missing = path.join(tmpRoot, "gone.json");
+      const link = path.join(localAppData, ...STORE, "settings.json");
+      fs.mkdirSync(path.dirname(link), { recursive: true });
+      try {
+        fs.symlinkSync(missing, link, "file");
+      } catch {
+        return;
+      }
+
+      // `fs.realpathSync` throws a bare ENOENT, which would reach the user as a stack trace.
+      let thrown: unknown;
+      try {
+        resolveSettingsTarget(link);
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(NightshiftError);
+      const error = thrown as NightshiftError;
+      expect(error.message).toContain(link);
+      expect(error.message).toContain(missing);
+      expect(error.message).toContain("does not exist");
+      expect(error.exitCode).toBe(EXIT_FAILURE);
+      expect(error.hint).toContain("Restore the file the link points at");
+    });
+
+    it("labels a dangling symlink for the report-only commands rather than throwing at them", () => {
+      // `status` and `doctor` are what a user runs *because* something is wrong, so neither may
+      // be taken down by the thing it exists to report.
+      const link = path.join(localAppData, ...STORE, "settings.json");
+      fs.mkdirSync(path.dirname(link), { recursive: true });
+      try {
+        fs.symlinkSync(path.join(tmpRoot, "gone.json"), link, "file");
+      } catch {
+        return;
+      }
+
+      expect(describeSettingsPath(link)).toBe(`${link} (broken symlink)`);
     });
   });
 });

@@ -1,4 +1,8 @@
-import { ConfigCorruptError } from "../core/config/store.js";
+// Imported from `core/config/errors.js`, not `core/config/store.js`. Deliberate and measured:
+// this module is loaded on every invocation (it holds the top-level handler), and `store.ts`
+// builds a zod schema at module scope - so importing the class from there put 228 ms of zod on
+// the startup path of `--version`. See docs/development/PERFORMANCE_REPORT.md.
+import { ConfigCorruptError } from "../core/config/errors.js";
 import { FileTooLargeError } from "../security/limits.js";
 import { errorMessage } from "./ui/feedback.js";
 

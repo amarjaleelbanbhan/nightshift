@@ -4,6 +4,22 @@
   "description": "An open-source developer terminal customization toolkit. Build your own terminal experience with themes, profiles, widgets, and integrations.",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amarjaleelbanbhan/nightshift.git"
+  },
+  "bugs": {
+    "url": "https://github.com/amarjaleelbanbhan/nightshift/issues"
+  },
+  "homepage": "https://github.com/amarjaleelbanbhan/nightshift#readme",
+  "keywords": [
+    "cli",
+    "terminal",
+    "windows-terminal",
+    "theme",
+    "customization",
+    "developer-tools"
+  ],
   "bin": {
     "nightshift": "./dist/index.js"
   },

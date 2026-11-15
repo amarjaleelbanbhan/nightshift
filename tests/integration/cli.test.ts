@@ -39,6 +39,30 @@ describe("CLI (built dist/index.js)", () => {
     expect(stdout).toContain("doctor");
   });
 
+  // Command *modules* are loaded lazily (dynamic `import()` inside each action handler) so a
+  // one-shot invocation only pays for the command it runs. Command *registration* must stay
+  // eager, or Commander silently stops knowing a command exists - help loses an entry and the
+  // command stops being dispatchable, with no error anywhere. The weak three-substring check
+  // above would not notice. This enumerates every registration and every option instead, so
+  // moving one into a lazy module fails here rather than in a user's shell.
+  it.each([
+    ["", ["init", "status", "setup", "theme", "profile", "doctor", "backup", "restore <backupId>"]],
+    ["", ["-V, --version", "--no-color", "-h, --help"]],
+    ["theme", ["list", "preview", "apply", "validate", "create", "remove"]],
+    ["theme create", ["--id <id>", "--name <name>", "--from <themeId>", "--description <text>"]],
+    ["theme create", ["--overwrite"]],
+    ["profile", ["list", "show", "apply", "import", "export", "remove"]],
+    ["profile import", ["--overwrite"]],
+    ["profile export", ["--output <path>", "--overwrite"]],
+    ["backup", ["list", "create"]],
+    ["setup", ["--yes"]],
+  ])("`%s --help` still registers %j despite lazy module loading", (group, expected) => {
+    const args = group === "" ? ["--help"] : [...group.split(" "), "--help"];
+    const { stdout, status } = runCli(args);
+    expect(status).toBe(0);
+    for (const entry of expected) expect(stdout).toContain(entry);
+  });
+
   it("lists built-in themes", () => {
     const { stdout, status } = runCli(["theme", "list"]);
     expect(status).toBe(0);

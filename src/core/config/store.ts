@@ -3,6 +3,12 @@ import { z } from "zod";
 import { getConfigFilePath } from "./paths.js";
 import { atomicWriteFileSync } from "../../utils/atomicWrite.js";
 import { readJsonFileWithLimit, FileTooLargeError } from "../../security/limits.js";
+import { ConfigCorruptError } from "./errors.js";
+
+// Re-exported so this stays the one import site callers know about. The class itself lives in
+// the zod-free `./errors.js` so that `src/cli/errors.ts` can do its `instanceof` check without
+// pulling this module's zod schema onto every command's startup path (see errors.js).
+export { ConfigCorruptError };
 
 const configSchema = z.object({
   schemaVersion: z.literal("1.0"),
@@ -21,23 +27,6 @@ const defaultConfig: NightshiftConfig = {
   activeProfileId: null,
   initializedAt: new Date(0).toISOString(),
 };
-
-/**
- * `config.json` exists but could not be turned into a config. Thrown rather than returned by
- * `readConfig()`; `src/cli/errors.ts` maps it to the documented config exit code. The message
- * names the file and the remedy, because a hand-edited `config.json` is an expected input -
- * the README tells users where it lives.
- */
-export class ConfigCorruptError extends Error {
-  constructor(configPath: string, detail: string) {
-    super(
-      `NIGHTSHIFT's configuration file could not be read: ${configPath}\n` +
-        `  ${detail}\n` +
-        "  Fix the file by hand, or delete it and run `nightshift init` to recreate it.",
-    );
-    this.name = "ConfigCorruptError";
-  }
-}
 
 export type ConfigReadResult = { ok: true; config: NightshiftConfig } | { ok: false; error: Error };
 

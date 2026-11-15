@@ -220,7 +220,56 @@ acceptance criteria in the per-task tables below are unchanged and remain author
 | **J** | integration-agent | I1 + I2 | Collision map from the real `git diff`, then combined end-to-end validation. Runs alone. |
 | **K** | orchestrator | P2 | Final acceptance + `PROJECT_COMPLETION_REPORT.md` + `ROADMAP_STATUS.md` reconciliation. |
 
-Wave A status: **in progress**.
+### 3.0.1 Cycle 1 — shipped and merged
+
+Waves A, B, C-prep, C, D, G, H all completed and were **merged to `main` as `026d35d`**
+(PR #2), with CI green on Node 22.12.0 / 24 / 26.
+
+| Wave | Agent(s) | Outcome |
+|---|---|---|
+| A | security-agent | `npm audit` **10 → 0**; `zod` 3→4.6.7, `vitest` 3→5.1.0; shared 64 KB JSON read cap |
+| B | architecture-agent ∥ devex-ux-agent | error contract + exit codes `0/1/2`; `NO_COLOR` made to actually work; WCAG contrast; table +2 overflow fixed |
+| C-prep | architecture-agent | apply engine extracted to `core/themes/apply.ts` (proven by differential probe); rollback dedup; `doctor` stops hiding a corrupt config; `--no-color` registered |
+| C | core-cli-agent | `nightshift setup [--yes]`; `theme validate\|create\|remove` |
+| D | debugging-agent | **G25** legacy-array `profiles` destruction; intermittent `backup list` failure; BOM handling; backup metadata validated |
+| — | monitor | three read-only passes over the shared tree: no lost edits, no skipped tests, no duplicate implementations |
+| G | dependency-compat-agent | `engines.node` **false `>=18` → `>=22.12.0`**; `files` 77 → 41 packed files |
+| H | build-release-agent | CI `npm ci` + real Node matrix + `format:check`; `prepublishOnly`; **install-from-tarball verified for the first time** |
+
+Test suite **73 → 268** across 12 → 25 files. Nothing skipped, weakened, or deleted at any point.
+
+Two defects were found that were **not** in the original §1.3 discovery, both by testing rather
+than reading, and both would have destroyed user data while reporting success:
+
+- **G25** — `typeof [] === "object"`, so a legacy-format `profiles` array was spread into
+  `{"0":…,"1":…}`, wiping the user's profile list while `theme apply` returned `{ok:true}`.
+- **`listBackups()`** left its `.sort()` outside the `try`, so metadata missing `createdAt` threw
+  from the comparator. Order-dependent: one bad entry returned results, two threw. This is the
+  command `restore`'s own error message tells users to run.
+
+Two findings were also **retracted** by the agents that raised them (G7's severity, and an
+apparent table backslash bug that was heredoc mangling in the agent's own probe). Recorded
+because a retraction is evidence the verification is real rather than performed.
+
+A third latent defect surfaced only because Wave H added the `format:check` CI step that G23 had
+called for: the repo had no `.gitattributes`, so `actions/checkout` on `windows-latest` checked
+out CRLF against Prettier's `lf` default and CI failed on 61 files while passing locally. Fixed at
+the checkout boundary and verified by cloning with `core.autocrlf=true`.
+
+### 3.0.2 Cycle 2 — remaining sequence
+
+Branch `feat/nightshift-perf-fonts` off `026d35d`. Ordering is driven by user-visible value, with
+`src/index.ts` still the contended file.
+
+| Wave | Agent(s) | Task | Why this order |
+|---|---|---|---|
+| **E** | performance-agent | E1 + E2 — G18/G28: startup is **800–1400 ms** per invocation | **Runs alone**: it must measure, and a competing agent corrupts the numbers. Highest-visibility item left — every command pays this before doing anything |
+| **F** | feature-agent ∥ qa-testing-agent | F2 font detection ∥ Q1+Q2 coverage + gap tests | Disjoint; fonts must add commands in whatever import style E2 establishes |
+| **I** | documentation-agent ∥ code-review-agent | W1+W2 ∥ R1+R2 | Docs need the final command set; review must be independent of the work it judges |
+| **J** | integration-agent | I1 + I2 | Combined end-to-end validation and the per-command exit-code table |
+| **K** | orchestrator | P2 | `PROJECT_COMPLETION_REPORT.md`, `ROADMAP_STATUS.md` reconciliation |
+
+Wave E status: **in progress**.
 
 ### Wave 1 — Audits (7 agents, parallel, read-only; write only their own new report)
 

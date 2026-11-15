@@ -5,6 +5,8 @@ import path from "node:path";
 import { runThemeApply } from "../../src/cli/commands/theme.js";
 import { runProfileApply } from "../../src/cli/commands/profile.js";
 import { buildApplyPreview } from "../../src/cli/commands/apply-preview.js";
+import { mergeThemeIntoSettings } from "../../src/adapters/windows-terminal/apply.js";
+import { getTheme } from "../../src/core/themes/registry.js";
 
 /**
  * `theme apply --dry-run` and `profile apply --dry-run` (#31).
@@ -236,6 +238,73 @@ describe("apply --dry-run", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.preview.fontWarning).toContain('"NIGHTSHIFT No Such Font" is not installed');
+  });
+
+  describe("unchanged keys (#35)", () => {
+    /**
+     * Writes a settings.json already carrying exactly what applying `ghost-protocol` would
+     * write, by running the real merge and saving its output. Deriving the fixture from the
+     * merge rather than hand-writing it is the point: a hand-written "already applied" file
+     * would drift from the merge and the test would stop meaning anything.
+     */
+    function writeFullyApplied(): void {
+      const current = JSON.parse(fs.readFileSync(settingsPath, "utf8")) as Record<string, unknown>;
+      const merged = mergeThemeIntoSettings(current, getTheme("ghost-protocol")!);
+      fs.writeFileSync(settingsPath, JSON.stringify(merged, null, 2));
+    }
+
+    it("reports a key whose value is already correct as same, not as a replacement", () => {
+      // ALREADY_THEMED has font.size 12 and ghost-protocol asks for 14, so size is a real
+      // replace; point it at 14 instead and the same key must stop being reported as one.
+      const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+      settings.profiles.defaults.font.size = 14;
+      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+
+      runThemeApply("ghost-protocol", { dryRun: true });
+
+      const text = output();
+      expect(text).toMatch(/= same\s+profiles\.defaults\.font\.size\s+14/);
+      expect(text).not.toMatch(/~ replace\s+profiles\.defaults\.font\.size/);
+      // The genuinely different keys must still read as changes - suppressing a no-op must not
+      // suppress everything.
+      expect(text).toMatch(/~ replace\s+profiles\.defaults\.colorScheme/);
+    });
+
+    it("says nothing would change when the theme is already fully applied", () => {
+      writeFullyApplied();
+      const before = fs.readFileSync(settingsPath);
+      const treeBefore = treeSnapshot();
+
+      runThemeApply("ghost-protocol", { dryRun: true });
+
+      const text = output();
+      expect(text).toContain("would change nothing");
+      expect(text).toContain('"Ghost Protocol" is already applied to that file');
+      expect(text).not.toContain("~ replace");
+      expect(text).not.toContain("+ add");
+      // Still a dry run, so the no-change case must write nothing either.
+      expect(fs.readFileSync(settingsPath).equals(before)).toBe(true);
+      expect(treeSnapshot()).toEqual(treeBefore);
+      expect(process.exitCode ?? 0).toBe(0);
+    });
+
+    it("treats a reordered scheme as unchanged rather than a false replacement", () => {
+      // The scheme comparison is key-order independent on purpose: a user who hand-formats or
+      // a tool that rewrites settings.json must not make NIGHTSHIFT claim a change.
+      writeFullyApplied();
+      const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
+      const index = settings.schemes.findIndex(
+        (s: { name: string }) => s.name === "Ghost Protocol",
+      );
+      settings.schemes[index] = Object.fromEntries(
+        Object.entries(settings.schemes[index]).reverse(),
+      );
+      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+
+      runThemeApply("ghost-protocol", { dryRun: true });
+
+      expect(output()).toMatch(/= same\s+schemes\[\] \(name "Ghost Protocol"\)/);
+    });
   });
 
   describe("profile apply --dry-run", () => {

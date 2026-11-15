@@ -50,7 +50,9 @@ status of the full 1.0.0 roadmap.
 ## Requirements
 
 - Windows 11 (Windows Terminal adapter is the only implemented platform adapter).
-- Node.js >= 18.
+- Node.js >= 22.12.0. The floor comes from `boxen` 9 (`>=22`) and is bounded by `vitest` 5
+  (`^22.12.0 || ^24.0.0 || >=26.0.0`), so 22.0.0-22.11.x could never be exercised by this
+  project's own test suite. CI runs 22.12.0, 24, and 26.
 
 ## Installation
 

@@ -5,7 +5,9 @@ import { isInitialized, tryReadConfig, type ConfigReadResult } from "../../core/
 import { inspectUserProfilesDirectory } from "../../core/profiles/registry.js";
 import { renderTable } from "../ui/table.js";
 import { getTheme } from "../../core/themes/registry.js";
+import type { Theme } from "../../core/themes/schema.js";
 import { auditThemeContrast, WCAG_AA_BODY, WCAG_AA_LARGE } from "../../core/themes/contrast.js";
+import { findInstalledFont } from "../../core/fonts/detect.js";
 import { EXIT_FAILURE, EXIT_CONFIG_CORRUPT } from "../errors.js";
 
 interface Check {
@@ -15,33 +17,33 @@ interface Check {
 }
 
 /**
+ * The active theme, or the reason there is no theme to inspect. Shared by every active-theme
+ * check below: this preamble (initialized? config readable? an active id? does it resolve?) used
+ * to be copied per check, which meant a fix to one copy left the others reporting differently
+ * about the same state.
+ */
+function activeThemeOrReason(configResult: ConfigReadResult): Theme | { reason: string } {
+  if (!isInitialized()) return { reason: "no active theme to check (run `nightshift init`)" };
+  // The config check further down reports the corruption in full; don't repeat it here.
+  if (!configResult.ok) return { reason: "skipped - config.json could not be read" };
+  const activeThemeId = configResult.config.activeThemeId;
+  if (!activeThemeId) {
+    return { reason: "no active theme to check (run `nightshift theme apply <id>`)" };
+  }
+  const theme = getTheme(activeThemeId);
+  if (!theme) return { reason: `active theme "${activeThemeId}" was not found` };
+  return theme;
+}
+
+/**
  * WCAG AA contrast of the *active* theme's colors against its own background. Reported as a
  * warning rather than a failure: a low-contrast theme is a readability problem with the user's
  * chosen palette, not a broken environment, so it must not change `doctor`'s exit code.
  */
 function activeThemeContrastCheck(configResult: ConfigReadResult): Check {
   const label = "Theme contrast";
-  if (!isInitialized()) {
-    return { label, status: "warn", detail: "no active theme to check (run `nightshift init`)" };
-  }
-
-  if (!configResult.ok) {
-    // The config check below already reports the corruption in full; don't repeat it here.
-    return { label, status: "warn", detail: "skipped - config.json could not be read" };
-  }
-  const activeThemeId = configResult.config.activeThemeId;
-  if (!activeThemeId) {
-    return {
-      label,
-      status: "warn",
-      detail: "no active theme to check (run `nightshift theme apply <id>`)",
-    };
-  }
-
-  const theme = getTheme(activeThemeId);
-  if (!theme) {
-    return { label, status: "warn", detail: `active theme "${activeThemeId}" was not found` };
-  }
+  const theme = activeThemeOrReason(configResult);
+  if ("reason" in theme) return { label, status: "warn", detail: theme.reason };
 
   const results = auditThemeContrast(theme);
   const failing = results.filter((r) => !r.passesBody);
@@ -60,6 +62,57 @@ function activeThemeContrastCheck(configResult: ConfigReadResult): Check {
       `${failing.length} below WCAG AA ${WCAG_AA_BODY}:1 for body text ` +
       `(${failing.map((r) => `${r.role} ${r.ratio.toFixed(2)}:1`).join(", ")}; ` +
       `>=${WCAG_AA_LARGE}:1 is AA for large text) - ${summary}`,
+  };
+}
+
+/**
+ * Whether the *active* theme's `typography.family` is actually installed.
+ *
+ * This is the check that exists because of a real silent failure: `theme apply` writes
+ * `typography.family` into Windows Terminal's `profiles.defaults.font.face`, Windows Terminal
+ * silently substitutes a default when that family is not installed, and NIGHTSHIFT printed
+ * `✓ Applied` either way. The user got a terminal that did not match the preview with no
+ * explanation anywhere. Naming it here is the whole point.
+ *
+ * `warn`, not `fail`: a missing font is a fixable state in the user's environment, in the same
+ * class as a low-contrast palette, and `doctor` must stay usable as a scripted health gate (see
+ * docs/ARCHITECTURE.md). `typography` is optional in `themeSchema`, so its absence is "no font
+ * requested" - an `ok`, not a problem.
+ */
+function activeThemeFontCheck(configResult: ConfigReadResult): Check {
+  const label = "Theme font";
+  const theme = activeThemeOrReason(configResult);
+  if ("reason" in theme) return { label, status: "warn", detail: theme.reason };
+
+  const family = theme.typography?.family;
+  if (!family) {
+    return { label, status: "ok", detail: `${theme.id} requests no specific font family` };
+  }
+
+  const lookup = findInstalledFont(family);
+  if (lookup.support !== "supported") {
+    return {
+      label,
+      status: "warn",
+      detail: `cannot verify "${family}" - font detection reports ${lookup.support} on ${lookup.platform}`,
+    };
+  }
+  if (!lookup.match) {
+    return {
+      label,
+      status: "warn",
+      detail:
+        `${theme.id} requests "${family}", which is not installed - Windows Terminal will ` +
+        "silently substitute another font, so the terminal will not match the theme preview " +
+        "(run `nightshift font list` to see what is installed)",
+    };
+  }
+  return {
+    label,
+    status: "ok",
+    detail: `${theme.id} requests "${family}" - installed ${
+      lookup.match.source === "user" ? "for this user" : "for all users"
+    }`,
   };
 }
 
@@ -130,6 +183,7 @@ export function runDoctor(): void {
   });
 
   checks.push(activeThemeContrastCheck(configResult));
+  checks.push(activeThemeFontCheck(configResult));
 
   console.log(chalk.bold("NIGHTSHIFT Environment Doctor"));
   console.log(

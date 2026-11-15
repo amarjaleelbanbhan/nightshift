@@ -26,6 +26,7 @@ import {
 } from "../commands/profile.js";
 import { runProfileList } from "../commands/profile.js";
 import { runDoctor } from "../commands/doctor.js";
+import { runFontList, runFontCheck } from "../commands/font.js";
 import { runBackupCreate, runBackupList } from "../commands/backup.js";
 import { runStatus } from "../commands/status.js";
 
@@ -128,7 +129,7 @@ async function runIntegrationsMenu(): Promise<void> {
 async function runSystemMenu(): Promise<void> {
   const choice = await promptSelect("System", [
     { label: "Setup", value: "setup", hint: "first-run configuration" },
-    { label: "Fonts", value: "fonts", hint: "planned" },
+    { label: "Fonts", value: "fonts", hint: "detect installed fonts (installing: not yet)" },
     { label: "Backups", value: "backups" },
     { label: "Settings", value: "settings" },
     { label: "Back", value: "back" },
@@ -137,7 +138,39 @@ async function runSystemMenu(): Promise<void> {
   if (choice === "setup") await runSetup();
   if (choice === "backups") await runBackupMenu();
   if (choice === "settings") runSettings();
-  if (choice === "fonts") log.warn(PLANNED);
+  if (choice === "fonts") await runFontsMenu();
+}
+
+/**
+ * Detection is real; installation is not. Installing a font writes outside NIGHTSHIFT's own
+ * config directory, so it needs the same shown-proposal-and-approval flow `setup` has - it is
+ * tracked separately and stays labelled here rather than being hidden, so the menu never implies
+ * a capability that does not exist.
+ */
+async function runFontsMenu(): Promise<void> {
+  const action = await promptSelect("Fonts", [
+    { label: "List installed fonts", value: "list" },
+    { label: "Check a specific family", value: "check", hint: "e.g. the font your theme asks for" },
+    { label: "Install a font", value: "install", hint: "not implemented" },
+    { label: "Back", value: "back" },
+  ]);
+  if (!action || action === "back") return;
+
+  if (action === "list") {
+    runFontList();
+    return;
+  }
+  if (action === "check") {
+    const family = await promptText("Font family to check (e.g. Cascadia Code):");
+    if (!family) return;
+    runFontCheck(family);
+    return;
+  }
+  log.warn(
+    "Font installation is not implemented. It writes outside NIGHTSHIFT's config directory, so " +
+      "it needs an explicit proposal-and-approval flow first. Install fonts with Windows' own " +
+      "font installer for now, then run `nightshift font check <family>` to confirm.",
+  );
 }
 
 function runSettings(): void {

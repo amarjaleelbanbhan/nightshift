@@ -8,7 +8,7 @@ import {
   recordActiveState,
 } from "../../src/core/themes/apply.js";
 import { readConfig, tryReadConfig } from "../../src/core/config/store.js";
-import { listBackups } from "../../src/backup/manager.js";
+import { createBackup, listBackups } from "../../src/backup/manager.js";
 
 /**
  * Direct coverage of the theme-apply engine extracted out of `src/cli/commands/theme.ts`
@@ -245,6 +245,34 @@ describe("theme apply engine", () => {
   });
 
   describe("recordActiveState (shared by theme apply and profile apply)", () => {
+    it("#23: refuses to roll back to a destination the backup metadata was edited to name", () => {
+      // The guard in `restoreBackup` has its own direct test, but that one calls it in
+      // isolation. This covers the wiring: `recordActiveState` must pass `backupPath` through,
+      // or an automatic rollback - which the user never asked for - follows whatever path is
+      // written in a file under %APPDATA%. Reverting the second argument at the call site
+      // makes this test fail and leaves every other rollback test passing.
+      const hijacked = path.join(tmpRoot, "HIJACKED.json");
+      const backup = createBackup(settingsPath, "apply theme ghost-protocol");
+      fs.writeFileSync(
+        path.join(appData, "nightshift", "backups", backup.id, "metadata.json"),
+        JSON.stringify({ ...backup, originalPath: hijacked }),
+      );
+
+      const result = recordActiveState(
+        { ok: true, message: "file applied", backupId: backup.id, backupPath: settingsPath },
+        {
+          subject: "Theme",
+          success: "unused",
+          record: () => {
+            throw new Error("config write blew up");
+          },
+        },
+      );
+
+      expect(result.ok).toBe(false);
+      expect(fs.existsSync(hijacked)).toBe(false);
+    });
+
     it("returns the caller's own success message and carries the backup id through", () => {
       const result = recordActiveState(
         { ok: true, message: "file applied", backupId: "b-1" },

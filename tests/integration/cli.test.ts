@@ -72,7 +72,9 @@ describe("CLI (built dist/index.js)", () => {
     ["profile import", ["--overwrite"]],
     ["profile export", ["--output <path>", "--overwrite"]],
     ["font", ["list", "check <family>"]],
-    ["backup", ["list", "create"]],
+    // `restore` exists both at the top level and under `backup`. Anyone holding an id from
+    // `backup list` reaches for `backup restore <id>`, which used to be an unknown command.
+    ["backup", ["list", "create", "restore <backupId>"]],
     ["setup", ["--yes"]],
   ])("`%s --help` still registers %j despite lazy module loading", (group, expected) => {
     const args = group === "" ? ["--help"] : [...group.split(" "), "--help"];

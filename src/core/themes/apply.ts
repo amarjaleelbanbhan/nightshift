@@ -4,8 +4,9 @@ import { setActiveTheme, isInitialized, initializeConfig } from "../config/store
 import { createBackup, restoreBackup } from "../../backup/manager.js";
 import {
   readWindowsTerminalSettings,
+  readWindowsTerminalSettingsFile,
   writeWindowsTerminalSettings,
-  mergeThemeIntoSettings,
+  mergeThemeIntoSettingsText,
 } from "../../adapters/windows-terminal/apply.js";
 import {
   resolveSettingsTarget,
@@ -28,6 +29,11 @@ export interface ApplyResult {
   ok: boolean;
   message: string;
   backupId?: string | undefined;
+  /**
+   * The file `backupId` snapshots. Carried so a later rollback can name its own destination
+   * instead of taking it from the backup's `metadata.json` (#23).
+   */
+  backupPath?: string | undefined;
 }
 
 /**
@@ -86,9 +92,10 @@ export function applyThemeFileOnly(id: string): ApplyResult {
   }
 
   try {
-    const current = readWindowsTerminalSettings(settingsPath);
-    const merged = mergeThemeIntoSettings(current, theme);
-    writeWindowsTerminalSettings(settingsPath, merged);
+    // Edit the file's own text rather than regenerating it, so comments, key order and
+    // indentation survive the write (#14).
+    const current = readWindowsTerminalSettingsFile(settingsPath);
+    writeWindowsTerminalSettings(settingsPath, mergeThemeIntoSettingsText(current, theme));
 
     const verification = readWindowsTerminalSettings(settingsPath);
     const schemes = verification.schemes;
@@ -99,7 +106,7 @@ export function applyThemeFileOnly(id: string): ApplyResult {
   } catch (error) {
     // Roll back on any failure so the user's settings.json is never left broken.
     try {
-      restoreBackup(backup.id);
+      restoreBackup(backup.id, settingsPath);
     } catch {
       // If restore itself fails, surface the original error below.
     }
@@ -113,6 +120,7 @@ export function applyThemeFileOnly(id: string): ApplyResult {
     ok: true,
     message: `Applied "${theme.name}" to Windows Terminal (${describeSettingsTarget(target)}).`,
     backupId: backup.id,
+    backupPath: settingsPath,
   };
 }
 
@@ -138,7 +146,7 @@ export function recordActiveState(
   } catch (error) {
     if (fileResult.backupId) {
       try {
-        restoreBackup(fileResult.backupId);
+        restoreBackup(fileResult.backupId, fileResult.backupPath);
       } catch {
         // Best effort - the original error is still reported below.
       }
@@ -151,7 +159,12 @@ export function recordActiveState(
     };
   }
 
-  return { ok: true, message: options.success, backupId: fileResult.backupId };
+  return {
+    ok: true,
+    message: options.success,
+    backupId: fileResult.backupId,
+    backupPath: fileResult.backupPath,
+  };
 }
 
 /**

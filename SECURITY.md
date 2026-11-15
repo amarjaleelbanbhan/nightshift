@@ -63,8 +63,10 @@ See `docs/SECURITY-MODEL.md` for the full reasoning and
   apply, but also haven't been tested.
 - Backup/restore has unit and integration test coverage but has only been exercised on
   Windows 11 with a single Windows Terminal installation layout per test run.
-- `theme apply` rewrites `settings.json` with 4-space JSON formatting; it does not preserve
-  the user's original key ordering or formatting style, only the data.
+- `theme apply` edits `settings.json` in place with targeted text edits, so comments, key
+  order and indentation are preserved. The edited region is reformatted to the file's own
+  indentation; a trailing comment on the last key of an object that gains a key is re-attached
+  to the end of that object rather than lost.
 - There is no code-signing or integrity verification for themes/profiles yet, since there is
   no remote registry to fetch them from in this release.
 - Destination symlink checks happen just before the write, so there is a small
@@ -72,7 +74,11 @@ See `docs/SECURITY-MODEL.md` for the full reasoning and
   possible portably with Node's synchronous `fs` API, and an attacker would already need
   write access to the same directory, so no privilege is gained. Documented, not fixed.
 - Windows Terminal's `settings.json` is read without a size cap (NIGHTSHIFT's own JSON files
-  are capped at 64 KB), and `nightshift backup restore` trusts the `originalPath` recorded in
-  its own backup metadata without re-validating it.
+  are capped at 64 KB). `nightshift backup restore` takes its destination from the
+  `originalPath` recorded in its own backup metadata, which is Zod-validated and
+  symlink-checked but still a string from a file; it is now printed before the write, and
+  pinned to the printed value. Every *automatic* rollback passes the path it backed up and
+  refuses to write anywhere else, so a poisoned metadata file cannot redirect a rollback the
+  user did not ask for (#23).
 
 This project has not had an external security audit. Treat it as early-stage software.

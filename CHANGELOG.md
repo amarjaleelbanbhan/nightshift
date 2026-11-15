@@ -6,6 +6,62 @@ All notable changes to this project are documented here.
 
 Nothing yet.
 
+## [0.4.0] - 2026-11-15
+
+`theme apply` now works on the `settings.json` Windows Terminal actually ships, and returns it
+as the user's own file rather than a regenerated one.
+
+### Added
+
+- **JSONC support for Windows Terminal's `settings.json` (#14).** The file is documented as
+  JSONC, the one Windows Terminal generates opens with a `//` header, and many people annotate
+  theirs. All of those were previously **refused** — `theme apply`, `profile apply` and `setup`
+  could not run at all on a commented settings file. They now read it (comments, block
+  comments and trailing commas) via `jsonc-parser`.
+- **The write preserves the file.** `theme apply` no longer round-trips through
+  `JSON.stringify`; it applies targeted text edits to just the keys it changes
+  (`schemes[]`, `profiles.defaults.colorScheme`, the font). Comments, key order, indentation
+  width, CRLF and a UTF-8 BOM all survive, and re-applying an already-applied theme leaves the
+  file byte-identical. The reformat is confined to the edited region, so a one-line scheme
+  entry expands across lines and a trailing comment on the last key of an object that gains a
+  key is re-attached to the end of that object — no comment text is lost. A fully minified
+  settings.json is the one file that comes back pretty-printed as a whole, since there is no
+  line boundary for the edit to stop at; both exceptions are documented in `README.md`.
+  `tests/integration/jsonc-settings.test.ts` pins all of this against a realistic commented,
+  two-space, trailing-comma settings file.
+- The write collapses **pre-existing duplicate entries** for the theme's own scheme name, so a
+  hand-edited file holding two `"Ghost Protocol"` entries comes out holding one. Replacing only
+  the first would have left the stale duplicate that Windows Terminal actually honours, and
+  would have disagreed with what the object merge — and therefore `--dry-run` — reported.
+- A pathologically nested settings.json (`jsonc-parser` is recursive-descent, where the
+  replaced `JSON.parse` was iterative) is reported as a NIGHTSHIFT error naming the file,
+  rather than a bare `RangeError: Maximum call stack size exceeded`. Nothing is written before
+  the parse, so this was always a message problem rather than a data one.
+
+### Security
+
+- **An automatic rollback can no longer be redirected by backup metadata (#23).**
+  `restoreBackup()` takes an optional `expectedPath` and refuses to write anywhere else; every
+  internal rollback passes the path it backed up. The destination otherwise comes from a
+  `metadata.json` on disk, which is Zod-validated and symlink-checked but still a string from a
+  file. The user-driven `nightshift backup restore` deliberately still uses the recorded path —
+  "put it back where it came from" is the request — but now **prints the destination before the
+  write** and pins the write to the path it printed. This is defence in depth, not a privilege
+  boundary: editing that metadata already needs the same rights the redirected write would
+  grant.
+
+### Changed
+
+- `restore` is now also registered as **`nightshift backup restore <id>`**, which is what
+  anyone holding an id from `backup list` types. The top-level `nightshift restore <id>` still
+  works and is unchanged.
+- A truncated or malformed `settings.json` is reported with the **line number** of the first
+  parse error. `jsonc-parser` recovers from syntax errors and returns a partial object, so the
+  parse errors are inspected rather than caught — a half-readable file is refused instead of
+  having a theme applied to the half that parsed.
+- A UTF-8 BOM is separated and re-attached rather than stripped, so a file Notepad saved as
+  "UTF-8 with BOM" is not silently converted on the first `theme apply`.
+
 ## [0.3.0] - 2026-11-15
 
 A hardening release. It does not add the 1.0.0 feature scope — Studio, the marketplace,

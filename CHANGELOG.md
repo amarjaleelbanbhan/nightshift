@@ -4,7 +4,36 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`nightshift theme edit <id> --set <role>=<#RRGGBB>` (#40)** — change a theme's colour without
+  opening the JSON. `--set` is repeatable and accepts any of the 9 `colors` roles or the 16
+  `ansi` ones. Also an **Edit a theme** action in the interactive Theme Studio menu, which lists
+  every role with its current value so nothing has to be spelled from memory.
+
+  **The new WCAG contrast ratios are printed before the write**, not after, so a change that
+  makes text unreadable is visible at the moment it is made rather than discovered once it is
+  applied to the terminal. Contrast stays advisory, exactly as in `theme validate` — a dim theme
+  is still a valid theme, so a failing ratio is shown and the write still happens.
+
+  `--dry-run` prints the before/after and the new ratios and writes nothing. An invalid hex is
+  refused with the same field path `theme validate` reports (`colors.primary: must be a 6-digit
+  hex color`), because it is literally the same schema — not a second opinion phrased
+  differently. An unknown role is refused with the full list of valid roles. A built-in theme
+  can never be edited in place under any flag; the refusal prints the `theme create --from`
+  command to clone it first.
+
+  The write is `createTheme`'s write — same safe-path resolution, same symlink guard, same
+  atomic write — so the codebase still has exactly one theme writer. A verified edit changes
+  only the lines for the roles named and leaves key order, formatting and every non-colour key
+  untouched.
+
+  This closes the gap that **#20 (NIGHTSHIFT Studio)** was reaching for. That issue was closed
+  rather than built: a local visual editor meant a second toolchain and a localhost HTTP server,
+  which would have broken the load-bearing claim in `docs/SECURITY-MODEL.md` that there is no
+  network call anywhere in `src/`, and replaced the shown-proposal consent flow with a browser
+  click. The actual user value — change a colour, see whether it is still readable — needed no
+  server.
 
 ## [0.4.0] - 2026-11-15
 

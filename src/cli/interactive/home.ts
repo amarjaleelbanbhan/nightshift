@@ -15,6 +15,7 @@ import {
   runThemeApply,
   runThemeValidate,
   runThemeCreate,
+  runThemeEdit,
   runThemeRemove,
 } from "../commands/theme.js";
 import { runSetup } from "../commands/setup.js";
@@ -200,6 +201,7 @@ async function runThemeMenu(): Promise<void> {
     { label: "Apply a theme", value: "apply" },
     { label: "Validate a theme file", value: "validate" },
     { label: "Create a new theme", value: "create" },
+    { label: "Edit a theme", value: "edit", hint: "change a colour" },
     { label: "Remove a user theme", value: "remove" },
     { label: "Back", value: "back" },
   ]);
@@ -227,6 +229,50 @@ async function runThemeMenu(): Promise<void> {
     );
     if (!from) return;
     runThemeCreate({ id, name, from });
+    return;
+  }
+
+  // A wrapper over `theme edit --set`, not a second implementation: it collects one
+  // `role=value` pair and hands it to the same function the flag does, so the refusals, the
+  // schema check and the contrast report are identical either way. Only user themes are offered
+  // because a built-in cannot be edited in place; the refusal and its clone suggestion still
+  // exist for `theme edit <builtin-id>` on the command line.
+  if (action === "edit") {
+    const userThemes = listThemes().filter((e) => e.source === "user");
+    if (userThemes.length === 0) {
+      log.info(
+        "No user themes to edit yet. Built-in themes cannot be edited in place - create your " +
+          "own copy first with `Create a new theme` (or `nightshift theme create --from <id>`), " +
+          "then edit that.",
+      );
+      return;
+    }
+    const editId = await promptSelect(
+      "Edit which theme?",
+      userThemes.map(({ theme }) => ({ label: theme.name, value: theme.id })),
+    );
+    if (!editId) return;
+    const theme = userThemes.find((e) => e.theme.id === editId)?.theme;
+    if (!theme) return;
+
+    // Every role with its current value, so the role never has to be spelled from memory -
+    // which is the specific thing hand-editing the JSON gets wrong.
+    const role = await promptSelect("Change which colour?", [
+      ...Object.entries(theme.colors).map(([name, hex]) => ({
+        label: name,
+        value: name,
+        hint: hex,
+      })),
+      ...Object.entries(theme.ansi).map(([name, hex]) => ({
+        label: `ansi ${name}`,
+        value: name,
+        hint: hex,
+      })),
+    ]);
+    if (!role) return;
+    const value = await promptText(`New hex value for ${role}:`, "#1A2B3C");
+    if (!value) return;
+    runThemeEdit(editId, { set: [`${role}=${value}`] });
     return;
   }
 

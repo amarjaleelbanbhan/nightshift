@@ -40,9 +40,37 @@ vi.mock("../../src/cli/ui/prompts.js", () => ({
   intro: vi.fn(),
   outro: vi.fn(() => calls.push("outro")),
   note: vi.fn(),
-  log: { info: vi.fn(), warn: vi.fn((m: string) => calls.push(`warn:${m.slice(0, 20)}`)) },
+  log: {
+    info: vi.fn((m: string) => calls.push(`info:${m.slice(0, 20)}`)),
+    warn: vi.fn((m: string) => calls.push(`warn:${m.slice(0, 20)}`)),
+  },
   promptSelect: vi.fn(() => Promise.resolve(answers.length > 0 ? answers.shift()! : null)),
   promptText: vi.fn(() => Promise.resolve(answers.length > 0 ? answers.shift()! : null)),
+}));
+
+/**
+ * The theme registry is mocked too, because two menu paths branch on *what is in it*: `remove`
+ * and `edit` offer user themes only and say so when there are none. Reading the developer's real
+ * `%APPDATA%` would make those tests pass or fail depending on whose machine they run on. The
+ * prompt layer is scripted, so the option lists these entries produce do not influence any
+ * answer - only the emptiness checks and the role lookup read them.
+ */
+vi.mock("../../src/core/themes/registry.js", () => ({
+  listThemes: vi.fn(() => [
+    {
+      source: "builtin",
+      theme: { id: "monolith", name: "Monolith", colors: { primary: "#FFFFFF" }, ansi: {} },
+    },
+    {
+      source: "user",
+      theme: {
+        id: "mine",
+        name: "Mine",
+        colors: { primary: "#102030" },
+        ansi: { brightRed: "#FF0000" },
+      },
+    },
+  ]),
 }));
 
 vi.mock("../../src/cli/commands/status.js", () => ({ runStatus: stub("status") }));
@@ -67,6 +95,9 @@ vi.mock("../../src/cli/commands/theme.js", () => ({
   runThemeApply: vi.fn((id: string) => calls.push(`theme-apply:${id}`)),
   runThemeValidate: vi.fn((f: string) => calls.push(`theme-validate:${f}`)),
   runThemeCreate: vi.fn((o: { id: string }) => calls.push(`theme-create:${o.id}`)),
+  runThemeEdit: vi.fn((id: string, o: { set?: string[] }) =>
+    calls.push(`theme-edit:${id}:${(o.set ?? []).join(",")}`),
+  ),
   runThemeRemove: vi.fn((id: string) => calls.push(`theme-remove:${id}`)),
 }));
 vi.mock("../../src/cli/commands/profile.js", () => ({
@@ -148,6 +179,30 @@ describe("interactive home dispatch", () => {
     expect(
       await session("customization", "theme", "create", "my-theme", "My Theme", "monolith"),
     ).toContain("theme-create:my-theme");
+  });
+
+  it("assembles the theme, role and value of an edit into one --set pair", async () => {
+    // The menu action is a wrapper over `theme edit --set`, so what it has to get right is the
+    // pair it builds: a wrapper that dropped the role or passed the label ("ansi brightRed")
+    // instead of the value would look identical to a test asserting only that `runThemeEdit`
+    // ran. An ANSI role is used deliberately - its menu label is not its role name.
+    expect(
+      await session("customization", "theme", "edit", "mine", "brightRed", "#ABCDEF"),
+    ).toContain("theme-edit:mine:brightRed=#ABCDEF");
+  });
+
+  it("offers only user themes for editing, and says so when there are none", async () => {
+    const { listThemes } = await import("../../src/core/themes/registry.js");
+    vi.mocked(listThemes).mockReturnValueOnce([
+      // Built-ins only: a built-in cannot be edited in place, so there is nothing to offer.
+      { source: "builtin", theme: { id: "monolith", name: "Monolith" } },
+    ] as unknown as ReturnType<typeof listThemes>);
+
+    const result = await session("customization", "theme", "edit");
+    expect(result.filter((c) => c.startsWith("theme-edit"))).toEqual([]);
+    // Saying so is the behaviour: a menu that silently did nothing would read as broken, and
+    // the message is where the clone-it-first remedy lives for this path.
+    expect(result.some((c) => c.startsWith("info:No user themes"))).toBe(true);
   });
 
   it.each([

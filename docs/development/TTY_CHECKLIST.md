@@ -43,6 +43,10 @@ What remains below is the part no harness can answer: whether it looks right.
       rule in `docs/ARCHITECTURE.md`.
 - [ ] A long session stays legible: run six or seven actions in a row and confirm the scrollback
       does not become unreadable.
+- [ ] **Theme Studio → Edit a theme.** The role list is 25 entries long, so it scrolls: confirm
+      the current hex hint stays aligned beside each role, and that the list is navigable rather
+      than merely present. Which pair the chosen role and value become is tested headlessly; how
+      a 25-item `select` reads in 40 columns is not.
 
 ## 2. Colour and contrast in a real terminal
 

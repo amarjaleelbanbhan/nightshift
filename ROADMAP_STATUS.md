@@ -217,9 +217,15 @@ Merged as part of `8a2a660`.
   theme through the built module.
 - Contrast is **advisory everywhere**. Verified by validating a deliberately dim theme: it
   reported two colors below 4.5:1 and still exited `0`. A dim theme is a valid theme.
-- **Not done:** no theme *editing* command (edit the JSON by hand and re-validate), no palette
-  generation, no import of third-party scheme formats (base16, iTerm, Windows Terminal
-  `schemes` entries).
+- **Theme editing is done** (#40): `theme edit <id> --set <role>=<#RRGGBB>`, repeatable, plus an
+  **Edit a theme** action in the interactive Theme Studio menu. The new contrast ratios are
+  printed *before* the write, so a change that makes text unreadable is visible at the moment it
+  is made rather than after it is applied. It reuses `createTheme`'s write path and
+  `validateThemeFile`'s schema, so there is still exactly one theme writer and one source of
+  validation messages. This closed the gap that issue #20 (a visual editor) was really reaching
+  for — see that issue for why a localhost GUI was rejected instead.
+- **Not done:** no palette generation, no import of third-party scheme formats (base16, iTerm,
+  Windows Terminal `schemes` entries).
 
 ## Phase 13 — Security and reliability (partial)
 

@@ -28,9 +28,16 @@ the full 1.0.0 roadmap.
   and a UTF-8 BOM all survive the write, and re-applying the same theme leaves the file
   byte-identical. Most theme switchers regenerate the file and quietly drop all of that.
 - Theme authoring: `theme validate` (reports *every* schema problem at once with its field
-  path), `theme create` (clones an existing theme into your user themes directory), and
-  `theme remove`. A built-in theme id can never be overwritten or removed, with or without
-  `--overwrite`.
+  path), `theme create` (clones an existing theme into your user themes directory),
+  `theme edit` and `theme remove`. A built-in theme id can never be overwritten, edited in
+  place or removed, with or without `--overwrite`.
+- `theme edit <id> --set <role>=<#RRGGBB>`: change a colour without opening the JSON, with the
+  new WCAG contrast ratios shown *before* the write — so a change that makes text unreadable is
+  visible at the moment it is made, rather than after you have applied it. `--set` is
+  repeatable, every value goes through the same schema that backs `theme validate` (an invalid
+  hex is refused with the same field path), and `--dry-run` prints the before/after and the new
+  ratios without writing. Also available as **Edit a theme** in the interactive Theme Studio
+  menu, which lists every role with its current value so nothing has to be spelled from memory.
 - `setup`: guided first run. It prints the exact proposal — every path it would create, the
   backup it would take, the theme it would apply — and writes nothing until you approve it. In
   a non-interactive environment (CI, a pipe, redirected output) it prints the proposal and
@@ -75,7 +82,8 @@ the full 1.0.0 roadmap.
 **Planned (not implemented — do not expect these to work)**
 
 - Font installation (downloading and installing a font for you).
-- NIGHTSHIFT Studio (visual editor).
+- NIGHTSHIFT Studio (visual editor). `theme edit` covers changing a colour from the CLI or the
+  interactive menu; there is no live visual editor.
 - Marketplace / community registry.
 - Widget system, ASCII Art Studio, shell prompt adapters (Starship integration).
 - Linux/macOS terminal adapters (Ghostty, Kitty, iTerm2, GNOME Terminal).
@@ -132,6 +140,7 @@ Run `nightshift` with no arguments for the interactive menu.
 | `nightshift theme apply <id> [--dry-run]` | Apply a theme to Windows Terminal (backs up first). `--dry-run` prints exactly which keys would be added or replaced and writes nothing |
 | `nightshift theme validate <file>` | Validate a theme JSON file, reporting every schema issue with its field path (exit 1 if invalid). Contrast warnings are advisory and do not fail validation |
 | `nightshift theme create` | Create a user theme by cloning an existing one. `--id`, `--name` (both required), `--from <themeId>` (default `ghost-protocol`), `--description`, `--overwrite`. A built-in id is refused under any flag |
+| `nightshift theme edit <id> --set <role>=<#RRGGBB>` | Change one or more colours of a user theme. `--set` is repeatable and takes any of the 9 `colors` roles or the 16 `ansi` ones; the new WCAG ratios are printed before the write. `--dry-run` shows the before/after and the new ratios and writes nothing. A built-in theme is refused and the clone command is suggested instead |
 | `nightshift theme remove <id>` | Remove a user-created theme. Built-in themes are refused, and so is the active theme (switch away first) |
 | `nightshift font list` | List font families installed on this system, flagging probable Nerd Fonts |
 | `nightshift font check <family>` | Report whether a font family is installed (exit 1 if it is not) |
@@ -255,12 +264,20 @@ file, not an excerpt, so it can be copied as-is.
   Windows Terminal substitutes a different font silently when it is not. `doctor` re-checks
   this for the active theme.
 
-Rather than writing this by hand, clone a working theme and edit it:
+Rather than writing this by hand, clone a working theme and change the colours you care about:
 
 ```bash
 nightshift theme create --id my-theme --name "My Theme" --from ghost-protocol
-nightshift theme validate "%APPDATA%\nightshift\themes\my-theme.json"
+nightshift theme edit my-theme --set primary=#65E58B --set background=#0A0D0B --dry-run
+nightshift theme edit my-theme --set primary=#65E58B --set background=#0A0D0B
+nightshift theme apply my-theme
 ```
+
+`theme edit` takes any of the nine `colors` roles or the sixteen `ansi` ones by name, refuses an
+invalid hex with the same field path `theme validate` reports, and prints the theme's WCAG
+contrast ratios *after* the change but *before* the write. Those ratios are advisory: a dim
+theme is still a valid theme, so a failing ratio is shown and the write still happens. Editing
+the file does not re-apply it — run `theme apply <id>` to see the change in Windows Terminal.
 
 You can also drop a theme JSON file into `%APPDATA%\nightshift\themes\` by hand; it shows up in
 `theme list` once it validates.

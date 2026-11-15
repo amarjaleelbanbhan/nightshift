@@ -147,6 +147,64 @@ describe("nightshift setup", () => {
     expect(process.exitCode ?? 0).toBe(0);
   });
 
+  it("with --yes: exits non-zero and points at doctor when the apply fails", async () => {
+    // The proposal promised step 3, so a failure here contradicts what the user approved and
+    // must be a *failure*, unlike the "Windows Terminal is absent" case above, which the
+    // proposal already told them would be skipped. This is the only branch of executeSetup
+    // that sets a non-zero exit code and nothing had ever run it.
+    //
+    // The settings path is made a directory so the backup copy cannot succeed: the apply fails
+    // before anything is read or written, which keeps the test about setup's handling rather
+    // than about a half-finished write.
+    fs.rmSync(settingsPath);
+    fs.mkdirSync(settingsPath);
+
+    await runSetup({ yes: true });
+
+    const text = out.join("\n");
+    // The config directory step ran and succeeded before the apply was attempted; setup does
+    // not pretend it did not.
+    expect(text).toContain("Created configuration directory");
+    expect(fs.existsSync(configPath)).toBe(true);
+    expect(text).toContain("Failed to create a backup before applying the theme");
+    expect(text).toContain("Run `nightshift doctor`");
+    expect(text).toContain("re-run `nightshift setup`");
+    expect(process.exitCode).toBe(1);
+    // No active theme was recorded, because none was applied.
+    expect(readConfig().activeThemeId).toBeNull();
+    expect(fs.statSync(settingsPath).isDirectory()).toBe(true);
+  });
+
+  it("proposes skipping the theme and names the platform when the host is not win32", async () => {
+    // A real Windows Terminal settings.json is on disk and LOCALAPPDATA points at it, so a
+    // proposal built from the filesystem rather than from the platform would offer to rewrite
+    // it. On linux there is no Windows Terminal to rewrite and the proposal must say so.
+    vi.resetModules();
+    vi.doMock("node:os", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:os")>();
+      const patched = { ...actual, platform: () => "linux" as const };
+      return { ...patched, default: patched };
+    });
+    try {
+      const setup = await import("../../src/cli/commands/setup.js");
+      const proposal = setup.buildSetupProposal();
+
+      // Asserted first: if the mock were not applied the module would report the real host and
+      // every assertion below would pass for the wrong reason.
+      expect(proposal.platform).toBe("linux");
+      expect(proposal.settingsPath).toBeNull();
+
+      const rendered = setup.renderSetupProposal(proposal);
+      expect(rendered).toContain("Skip theme application");
+      expect(rendered).toContain("platform: linux");
+      expect(rendered).not.toContain(settingsPath);
+      expect(rendered).toContain("no file outside the directory above would be modified");
+    } finally {
+      vi.doUnmock("node:os");
+      vi.resetModules();
+    }
+  });
+
   it("reports an existing config as reused rather than created", async () => {
     await runSetup({ yes: true });
     out = [];

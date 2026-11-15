@@ -207,6 +207,25 @@ describe("theme manager", () => {
       const result = createTheme({ id: "round-trip", name: "Round Trip" });
       expect(validateThemeFile(result.path as string).ok).toBe(true);
     });
+
+    it("allows --overwrite on the ACTIVE theme and leaves it active with its new definition", () => {
+      createTheme({ id: "live", name: "Live", from: "ghost-protocol" });
+      initializeConfig();
+      writeConfig({ ...readConfig(), activeThemeId: "live" });
+
+      const result = createTheme({ id: "live", name: "Live v2", from: "redline", overwrite: true });
+
+      // Deliberately asymmetric with removeTheme, which refuses the active theme: editing the
+      // active theme is the ordinary authoring loop, whereas deleting it would leave the config
+      // naming a file that no longer exists. The asymmetry is pinned because it is surprising.
+      expect(result.ok).toBe(true);
+      expect(readConfig().activeThemeId).toBe("live");
+      // The colours behind that id have changed on disk with no `theme apply`, so Windows
+      // Terminal keeps showing the old ones until the user re-applies. Nothing warns about that
+      // gap today; this records where it is.
+      expect(getTheme("live")?.name).toBe("Live v2");
+      expect(getTheme("live")?.colors.background).toBe(getTheme("redline")?.colors.background);
+    });
   });
 
   describe("removeTheme", () => {
@@ -243,6 +262,36 @@ describe("theme manager", () => {
       expect(result.ok).toBe(false);
       expect(result.message).toContain("is the active theme and cannot be removed");
       expect(userThemeFileExists("in-use")).toBe(true);
+    });
+
+    it("leaves the config byte-for-byte alone when the removed theme is not the active one", () => {
+      createTheme({ id: "keeper", name: "Keeper" });
+      createTheme({ id: "goner", name: "Goner" });
+      initializeConfig();
+      writeConfig({ ...readConfig(), activeThemeId: "keeper" });
+      const configPath = path.join(tmpRoot, "nightshift", "config.json");
+      const before = fs.readFileSync(configPath, "utf8");
+
+      expect(removeTheme("goner").ok).toBe(true);
+
+      // removeTheme reads the config to make its decision and must never write one back.
+      // Byte equality is the assertion rather than a field check, because a rewrite that
+      // happened to preserve activeThemeId would still have reformatted the file and clobbered
+      // any field a future schema version added.
+      expect(fs.readFileSync(configPath, "utf8")).toBe(before);
+      expect(userThemeFileExists("keeper")).toBe(true);
+      expect(userThemeFileExists("goner")).toBe(false);
+    });
+
+    it("removes a theme without materialising a config when none exists yet", () => {
+      // `readConfig()` returns defaults for a missing file, so the active-theme check works
+      // before `init` has ever run. It must not create the file as a side effect - a user who
+      // has not initialised has no active theme and should still be able to delete their own.
+      createTheme({ id: "pre-init", name: "Pre Init" });
+      expect(fs.existsSync(path.join(tmpRoot, "nightshift", "config.json"))).toBe(false);
+
+      expect(removeTheme("pre-init").ok).toBe(true);
+      expect(fs.existsSync(path.join(tmpRoot, "nightshift", "config.json"))).toBe(false);
     });
 
     it("reads the config before unlinking, so a corrupt config cannot leave a deleted file", () => {

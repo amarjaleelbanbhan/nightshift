@@ -38,5 +38,10 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build
-      - run: npm test
+      # test:coverage, not test: it runs the same suite and additionally enforces the coverage
+      # thresholds in vitest.config.ts, so running both would just run every test twice. The
+      # thresholds are split - a loose global tripwire plus a strict gate on the engine glob -
+      # because integration tests spawn the real binary and v8 only instruments the in-process
+      # worker, so CLI command modules read as 0% while being thoroughly exercised.
+      - run: npm run test:coverage
       - run: npm audit --audit-level=moderate

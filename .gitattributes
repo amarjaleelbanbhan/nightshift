@@ -1,0 +1,15 @@
+# Keep line endings deterministic in every checkout.
+#
+# Without this file, `actions/checkout` on a windows-latest runner inherits git's
+# Windows default of core.autocrlf=true and checks the tree out as CRLF, while
+# Prettier's endOfLine default is "lf". The result is a CI-only failure: `npm run
+# format:check` passes locally (the committed blobs and the local tree are both LF)
+# and then reports every source file as unformatted on CI. Normalising here fixes
+# it at the source rather than relaxing Prettier to endOfLine: "auto", which would
+# merely hide mixed line endings instead of preventing them.
+* text=auto eol=lf
+
+# Never translate these.
+*.png binary
+*.ico binary
+*.tgz binary

@@ -419,6 +419,12 @@ Adopted in: `src/cli/commands/theme.ts`, `src/cli/commands/doctor.ts`.
 
 ## 7. Must be checked by a human in a real TTY
 
+> **Superseded as a working document by `docs/development/TTY_CHECKLIST.md` (#13).** That file
+> is the maintained release gate, referenced from `RELEASE_CHECKLIST.md` §3a, and it records
+> which of the items below are now covered automatically by
+> `tests/unit/interactive-home.test.ts` instead. This section stays as the dated audit record
+> that identified the gap.
+
 **None of the following was verified. This environment has no TTY, so `@clack/prompts` cannot
 render at all.** No claim is made about any of it.
 

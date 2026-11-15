@@ -19,7 +19,9 @@ import { reportFatal } from "./cli/errors.js";
  * - **`--help` stays complete.** Laziness applies only to action handlers. Every command,
  *   subcommand, argument, option and description is still declared here at module scope, so
  *   Commander's help generation sees exactly what it saw before - verified byte-identical for
- *   the root and all 22 subcommands.
+ *   the root and every subcommand. `tests/integration/cli.test.ts` enumerates each registration
+ *   and option against the built binary, because a registration that slips into a lazy module
+ *   vanishes from help and from dispatch with no error anywhere.
  * - **Colour configuration still happens before any output.** `src/cli/ui/color-mode.ts` sets
  *   `chalk.level = 0` as an import side effect. ESM resolves a module's whole import graph
  *   before executing its body, so by the time a lazily imported `runX()` runs, color-mode has
@@ -46,6 +48,7 @@ const themeModule = () => import("./cli/commands/theme.js");
 const profileModule = () => import("./cli/commands/profile.js");
 const doctorModule = () => import("./cli/commands/doctor.js");
 const backupModule = () => import("./cli/commands/backup.js");
+const fontModule = () => import("./cli/commands/font.js");
 
 program
   .command("init")
@@ -139,6 +142,16 @@ program
   .command("doctor")
   .description("Diagnose the environment and NIGHTSHIFT's configuration")
   .action(async () => (await doctorModule()).runDoctor());
+
+const font = program.command("font").description("Inspect installed fonts");
+font
+  .command("list")
+  .description("List font families installed on this system")
+  .action(async () => (await fontModule()).runFontList());
+font
+  .command("check <family>")
+  .description("Check whether a font family is installed (exit 1 if it is not)")
+  .action(async (family: string) => (await fontModule()).runFontCheck(family));
 
 const backup = program.command("backup").description("Back up terminal configuration");
 backup

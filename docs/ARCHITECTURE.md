@@ -1,6 +1,6 @@
 # Architecture
 
-Single TypeScript package, ESM, Node >=18. No monorepo, no backend, no database.
+Single TypeScript package, ESM, Node >=22.12.0. No monorepo, no backend, no database.
 
 ```text
 src/
@@ -25,7 +25,10 @@ src/
 │   ├── profiles/                schema (Zod, strict), registry (bundled+user, read-only),
 │   │                             manager (import/export/remove, mutating)
 │   ├── config/                  NIGHTSHIFT's own config.json: paths + read/write
-│   └── capabilities/            platform/terminal/Claude Code detection
+│   ├── capabilities/            platform/terminal/Claude Code detection
+│   └── fonts/                   detect.ts: installed font families, read from the Windows
+│                                  font directories by parsing each file's sfnt `name` table
+│                                  (read-only; installing fonts is not implemented)
 ├── adapters/
 │   └── windows-terminal/        locate settings.json, merge theme into it
 ├── backup/                      generic file-snapshot backup/restore

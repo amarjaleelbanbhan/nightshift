@@ -4,6 +4,7 @@ import { isInitialized, initializeConfig } from "../../core/config/store.js";
 import { getNightshiftRoot, getBackupsDir } from "../../core/config/paths.js";
 import { getTheme } from "../../core/themes/registry.js";
 import { applyThemeToWindowsTerminal } from "../../core/themes/apply.js";
+import { resolveSettingsTarget } from "../../adapters/windows-terminal/locate.js";
 import { promptConfirm } from "../ui/prompts.js";
 import { successMessage, warnMessage, emptyState, failWith } from "../ui/feedback.js";
 
@@ -31,8 +32,14 @@ export interface SetupProposal {
   backupsDir: string;
   themeId: string;
   themeName: string;
-  /** Windows Terminal's settings.json, or null when it was not found. */
+  /**
+   * The settings.json `setup` would really write: Windows Terminal's, resolved through a
+   * symlink when the user has one, or null when it was not found. The proposal is the consent,
+   * so it has to name the file that gets written and not the link that led to it (#27).
+   */
   settingsPath: string | null;
+  /** The symlink `settingsPath` was reached through, when the located path was one. */
+  settingsLinkPath: string | null;
   platform: NodeJS.Platform;
 }
 
@@ -40,13 +47,18 @@ export interface SetupProposal {
 export function buildSetupProposal(themeId: string = DEFAULT_SETUP_THEME_ID): SetupProposal {
   const caps = detectCapabilities();
   const theme = getTheme(themeId);
+  const located = caps.windowsTerminal.settingsPath;
+  // Resolved here rather than only inside the apply engine, so the proposal the user approves
+  // names the same file the engine will write. Throws on a dangling link, before any write.
+  const target = located ? resolveSettingsTarget(located) : null;
   return {
     configRoot: getNightshiftRoot(),
     configExists: isInitialized(),
     backupsDir: getBackupsDir(),
     themeId,
     themeName: theme?.name ?? themeId,
-    settingsPath: caps.windowsTerminal.settingsPath,
+    settingsPath: target?.path ?? null,
+    settingsLinkPath: target?.linkPath ?? null,
     platform: caps.platform,
   };
 }
@@ -63,7 +75,10 @@ export function renderSetupProposal(proposal: SetupProposal): string {
   if (proposal.settingsPath) {
     lines.push(
       `  ${chalk.cyan("2.")} Back up Windows Terminal's settings.json first`,
-      `     ${proposal.settingsPath}`,
+      `     ${proposal.settingsPath}` +
+        (proposal.settingsLinkPath
+          ? chalk.gray(`  (via the symlink ${proposal.settingsLinkPath})`)
+          : ""),
       `     ${chalk.gray(`-> snapshot in ${proposal.backupsDir}`)}`,
       `  ${chalk.cyan("3.")} Apply the theme ${chalk.bold(proposal.themeName)} (${proposal.themeId}) to that settings.json`,
       `     ${chalk.gray("Unrelated keys are preserved; the write is verified and rolled back on failure.")}`,

@@ -1,23 +1,31 @@
 import chalk from "chalk";
 import { createBackup, listBackups, restoreBackup } from "../../backup/manager.js";
 import { detectCapabilities } from "../../core/capabilities/detect.js";
+import {
+  resolveSettingsTarget,
+  describeSettingsTarget,
+} from "../../adapters/windows-terminal/locate.js";
 import { renderTable } from "../ui/table.js";
 import { failWith, successMessage, emptyState } from "../ui/feedback.js";
 import { NightshiftError, EXIT_FAILURE } from "../errors.js";
 
 export function runBackupCreate(): void {
   const caps = detectCapabilities();
-  const settingsPath = caps.windowsTerminal.settingsPath;
-  if (!settingsPath) {
+  const located = caps.windowsTerminal.settingsPath;
+  if (!located) {
     failWith(
       "No Windows Terminal settings.json detected to back up.",
       "Run `nightshift doctor` to see whether Windows Terminal was detected on this machine.",
     );
     return;
   }
-  const backup = createBackup(settingsPath, "manual backup");
+  // Snapshot the resolved file, not the link. `restoreBackup` refuses to write *through* a
+  // symlink (deliberately - that destination comes out of a file), so recording the link path
+  // here produced a backup that could never be restored (#27).
+  const target = resolveSettingsTarget(located);
+  const backup = createBackup(target.path, "manual backup");
   console.log(successMessage(`Backup created: ${backup.id}`));
-  console.log(chalk.gray(`Source: ${settingsPath}`));
+  console.log(chalk.gray(`Source: ${describeSettingsTarget(target)}`));
 }
 
 export function runBackupList(): void {

@@ -9,7 +9,7 @@ import {
   type ApplyResult,
 } from "../../core/themes/apply.js";
 import { renderTable } from "../ui/table.js";
-import { failWith, successMessage, emptyState } from "../ui/feedback.js";
+import { failWith, successMessage, warnMessage, emptyState } from "../ui/feedback.js";
 import { reportConfigCorrupt } from "../errors.js";
 
 /**
@@ -127,12 +127,18 @@ export function runProfileImport(file: string, options: { overwrite?: boolean | 
   const result = importProfile(file, { overwrite: options.overwrite });
   if (result.ok) {
     console.log(successMessage(result.message));
-  } else {
-    failWith(
-      result.message,
-      "Check the file path and that its contents match the profile format - `nightshift profile export <id>` writes a valid example to copy.",
-    );
+    return;
   }
+  // The built-in-id refusal is the one import failure the generic hint actively misdirected on:
+  // it recommended `profile export`, which is the command that *produced* the rejected file, so
+  // a user following the hint re-exported, re-imported and got the identical error (#29). The
+  // refusal stays; the hint now names the edit that resolves it.
+  failWith(
+    result.message,
+    result.message.includes("is a built-in profile id")
+      ? 'Change the "id" field in that file to an id of your own, then re-run - built-in ids are shipped with NIGHTSHIFT and cannot be replaced.'
+      : "Check the file path and that its contents match the profile format - `nightshift profile export <id>` writes a valid example to copy.",
+  );
 }
 
 export function runProfileExport(
@@ -142,6 +148,7 @@ export function runProfileExport(
   const result = exportProfile(id, { outputPath: options.output, overwrite: options.overwrite });
   if (result.ok) {
     console.log(successMessage(result.message));
+    if (result.warning) console.log(warnMessage(result.warning));
   } else {
     failWith(
       result.message,

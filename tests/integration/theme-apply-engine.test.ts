@@ -177,37 +177,70 @@ describe("theme apply engine", () => {
       expect(readConfig().activeThemeId).toBeNull();
     });
 
-    it("D-1: replaces a symlinked settings.json with a regular file and still reports success", () => {
-      // A settings.json symlinked into a dotfiles repo is a common setup. `atomicWriteFileSync`
-      // renames over its target, so the link is severed and the user's tracked file keeps the
-      // OLD content - while the result says `ok`. `restoreBackup` guards exactly this with
-      // `assertNotSymlink`; the Windows Terminal write does not.
-      //
-      // This pins the CURRENT behaviour so the defect is visible and a fix has to flip these
-      // assertions deliberately. It is not an endorsement of it.
+    /**
+     * Creates `settingsPath` as a symlink to a tracked dotfiles file and returns both paths,
+     * or null when this environment cannot create a file symlink (Windows needs Developer Mode
+     * or elevation). Returning honestly beats asserting as though the link existed.
+     */
+    function linkSettingsIntoDotfiles(content: object): { tracked: string } | null {
       const tracked = path.join(tmpRoot, "dotfiles-settings.json");
-      fs.writeFileSync(tracked, JSON.stringify({ copyOnSelect: true, fromDotfiles: true }));
+      fs.writeFileSync(tracked, JSON.stringify(content));
       fs.rmSync(settingsPath);
       try {
         fs.symlinkSync(tracked, settingsPath, "file");
       } catch {
-        // Creating a file symlink on Windows needs Developer Mode or elevation. Returning is
-        // honest; asserting as though it had been created would not be.
-        return;
+        return null;
       }
       expect(fs.lstatSync(settingsPath).isSymbolicLink()).toBe(true);
+      return { tracked };
+    }
+
+    it("D-1: follows a symlinked settings.json, keeps the link, and names both paths", () => {
+      // A settings.json symlinked into a dotfiles repo is a common setup - arguably the setup
+      // most likely among this tool's users. `atomicWriteFileSync` renames over its target, so
+      // writing the link path severed the link and left the user's tracked file holding the OLD
+      // content while the result said `ok` (#27).
+      //
+      // The fix follows the link rather than refusing it: a symlink is a deliberate "this file
+      // lives elsewhere", and refusing would make `theme apply` unusable for dotfiles users.
+      // These assertions were written against the broken behaviour and flipped deliberately.
+      const linked = linkSettingsIntoDotfiles({ copyOnSelect: true, fromDotfiles: true });
+      if (!linked) return;
 
       const result = applyThemeToWindowsTerminal("ghost-protocol");
 
       expect(result.ok).toBe(true);
-      expect(fs.lstatSync(settingsPath).isSymbolicLink()).toBe(false);
-      const tracked_after = JSON.parse(fs.readFileSync(tracked, "utf8"));
-      expect(tracked_after.fromDotfiles).toBe(true);
-      expect(tracked_after.schemes).toBeUndefined();
-      // The theme did land somewhere Windows Terminal will read, which is why nothing
-      // currently reports a problem.
-      const written = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
-      expect(written.profiles.defaults.colorScheme).toBe("Ghost Protocol");
+      // The link survives: the write went through it to the real file, not over it.
+      expect(fs.lstatSync(settingsPath).isSymbolicLink()).toBe(true);
+      const trackedAfter = JSON.parse(fs.readFileSync(linked.tracked, "utf8"));
+      expect(trackedAfter.fromDotfiles).toBe(true);
+      expect(trackedAfter.profiles.defaults.colorScheme).toBe("Ghost Protocol");
+      expect(trackedAfter.schemes.map((s: { name: string }) => s.name)).toEqual(["Ghost Protocol"]);
+      // Writing somewhere other than the path you told the user about is the same defect in a
+      // different costume, so the message names the file that was really written *and* the link.
+      expect(result.message).toContain(fs.realpathSync(linked.tracked));
+      expect(result.message).toContain(settingsPath);
+    });
+
+    it("D-1: a rollback across a symlink restores the content into the tracked file", () => {
+      // The second half of #27: `createBackup` used to snapshot the link path, so a rollback
+      // restored to the wrong place. Forcing the config write to fail exercises the real
+      // rollback path (recordActiveState -> restoreBackup) rather than a simulated one.
+      const linked = linkSettingsIntoDotfiles({ copyOnSelect: true, fromDotfiles: true });
+      if (!linked) return;
+      const before = fs.readFileSync(linked.tracked, "utf8");
+      fs.mkdirSync(path.join(appData, "nightshift", "config.json"), { recursive: true });
+
+      const result = applyThemeToWindowsTerminal("ghost-protocol");
+
+      expect(result.ok).toBe(false);
+      expect(result.message).toContain("the previous terminal settings were restored");
+      // Restored content lands in the file the user actually had, and the link still points
+      // at it. `restoreBackup`'s own `assertNotSymlink` is not tripped, because the backup
+      // recorded the resolved target rather than the link.
+      expect(fs.readFileSync(linked.tracked, "utf8")).toBe(before);
+      expect(fs.lstatSync(settingsPath).isSymbolicLink()).toBe(true);
+      expect(listBackups()[0]?.originalPath).toBe(fs.realpathSync(linked.tracked));
     });
   });
 

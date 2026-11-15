@@ -94,6 +94,41 @@ describe("nightshift setup", () => {
     expect(fs.existsSync(path.join(appData, "nightshift"))).toBe(false);
   });
 
+  it("names the resolved target, not the link, when settings.json is a symlink (#27)", async () => {
+    // `setup` is the one command that writes outside NIGHTSHIFT's own directory, so its
+    // proposal is the consent. Proposing the link path while writing the target would make the
+    // approval cover a file the user was never shown - the same defect as severing the link,
+    // in a different costume. This also proves `setup` inherits the engine fix rather than
+    // carrying a second resolution of its own.
+    const tracked = path.join(tmpRoot, "dotfiles-settings.json");
+    fs.writeFileSync(tracked, JSON.stringify(ORIGINAL_SETTINGS, null, 2));
+    fs.rmSync(settingsPath);
+    try {
+      fs.symlinkSync(tracked, settingsPath, "file");
+    } catch {
+      // A file symlink on Windows needs Developer Mode or elevation.
+      return;
+    }
+    const realTracked = fs.realpathSync(tracked);
+
+    const proposal = buildSetupProposal();
+    expect(proposal.settingsPath).toBe(realTracked);
+    const rendered = renderSetupProposal(proposal);
+    expect(rendered).toContain(realTracked);
+    expect(rendered).toContain(settingsPath);
+
+    await runSetup({ yes: true });
+
+    const text = out.join("\n");
+    expect(text).toContain('Applied "Ghost Protocol" to Windows Terminal');
+    expect(text).toContain(realTracked);
+    expect(fs.lstatSync(settingsPath).isSymbolicLink()).toBe(true);
+    expect(JSON.parse(fs.readFileSync(tracked, "utf8")).profiles.defaults.colorScheme).toBe(
+      "Ghost Protocol",
+    );
+    expect(process.exitCode ?? 0).toBe(0);
+  });
+
   it("prints the proposal and writes NOTHING without a TTY and without --yes", async () => {
     // vitest workers have no TTY on stdin/stdout, which is the condition under test.
     expect(process.stdin.isTTY).toBeFalsy();

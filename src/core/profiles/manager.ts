@@ -14,6 +14,8 @@ export interface ProfileFileResult {
   message: string;
   profile?: Profile | undefined;
   path?: string | undefined;
+  /** An advisory about a *successful* operation - the operation still succeeded. */
+  warning?: string | undefined;
 }
 
 export function importProfile(
@@ -126,6 +128,18 @@ export function exportProfile(
     message: `Exported "${id}" to "${destPath}".`,
     profile: result.data,
     path: destPath,
+    // Export -> tweak -> import is what this command is for, but the exported file keeps the
+    // built-in id and `importProfile` refuses every built-in id - correctly, that rule is a
+    // deliberate safety property. So the file this command just wrote cannot be imported, and
+    // nothing used to say so (#29). The warning goes here, at export, because this is where the
+    // user still has the context, and it names the one edit that makes the file usable.
+    ...(isBuiltinProfileId(id)
+      ? {
+          warning:
+            `"${id}" is a built-in profile id, so this file cannot be imported as-is. ` +
+            `Change its "id" field to an id of your own before importing it.`,
+        }
+      : {}),
   };
 }
 

@@ -2,6 +2,7 @@ import chalk from "chalk";
 import os from "node:os";
 import { tryReadConfig, isInitialized } from "../../core/config/store.js";
 import { detectCapabilities } from "../../core/capabilities/detect.js";
+import { describeSettingsPath } from "../../adapters/windows-terminal/locate.js";
 import { getTheme } from "../../core/themes/registry.js";
 import { getProfile } from "../../core/profiles/registry.js";
 import { renderStatusPanel } from "../../banners/startup.js";
@@ -26,7 +27,12 @@ export function runStatus(): void {
         ["OS", `${os.platform()} ${os.release()}`],
         [
           "Windows Terminal",
-          describe(caps.windowsTerminal.support, caps.windowsTerminal.settingsPath),
+          describe(
+            caps.windowsTerminal.support,
+            // Resolved, so the path shown is the one a theme apply would write (#27).
+            caps.windowsTerminal.settingsPath &&
+              describeSettingsPath(caps.windowsTerminal.settingsPath),
+          ),
         ],
         ["Claude Code", describe(caps.claudeCode.support, caps.claudeCode.settingsPath)],
         [

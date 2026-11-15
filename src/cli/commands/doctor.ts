@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import process from "node:process";
 import { detectCapabilities } from "../../core/capabilities/detect.js";
+import { describeSettingsPath } from "../../adapters/windows-terminal/locate.js";
 import { isInitialized, tryReadConfig, type ConfigReadResult } from "../../core/config/store.js";
 import { inspectUserProfilesDirectory } from "../../core/profiles/registry.js";
 import { renderTable } from "../ui/table.js";
@@ -176,7 +177,11 @@ export function runDoctor(): void {
     // so the platform test was dead. The distinction it was reaching for is already carried by
     // the Platform support check above and by the detail line below.
     status: caps.windowsTerminal.support === "supported" ? "ok" : "warn",
-    detail: caps.windowsTerminal.settingsPath ?? "settings.json not found",
+    // Resolved, so the path reported is the one a theme apply would write (#27). `doctor` is
+    // run *because* something is wrong, so a dangling link is labelled rather than thrown.
+    detail: caps.windowsTerminal.settingsPath
+      ? describeSettingsPath(caps.windowsTerminal.settingsPath)
+      : "settings.json not found",
   });
 
   checks.push({

@@ -20,7 +20,8 @@ the full 1.0.0 roadmap.
 
 - Theme engine: 4 built-in themes, Zod-validated schema, list/preview.
 - `theme apply`: writes a theme into Windows Terminal's `settings.json`, preserving every
-  unrelated key, with an automatic backup-and-rollback on failure.
+  unrelated key, with an automatic backup-and-rollback on failure. `--dry-run` shows the exact
+  keys it would add or replace, in the file it would really write, and writes nothing.
 - Theme authoring: `theme validate` (reports *every* schema problem at once with its field
   path), `theme create` (clones an existing theme into your user themes directory), and
   `theme remove`. A built-in theme id can never be overwritten or removed, with or without
@@ -37,6 +38,8 @@ the full 1.0.0 roadmap.
   *active theme's* requested font is actually installed. That check exists because Windows
   Terminal silently substitutes a different font when the requested family is missing, and
   `theme apply` used to print success without mentioning it.
+- PowerShell Tab completion (`completion powershell`), completing commands, options and -
+  the part that matters - theme, profile and backup ids read from the live registries.
 - A documented exit-code contract (see "Exit codes" below) and `--no-color` / `NO_COLOR`
   support, verified to emit zero ANSI escape sequences.
 - Profile Manager: `profile list/show/apply/import/export/remove`, reusing the theme engine's
@@ -105,7 +108,8 @@ Or do it by hand:
 
 ```bash
 nightshift init            # create NIGHTSHIFT's own config directory
-nightshift theme apply ghost-protocol   # applies to Windows Terminal, with backup/rollback
+nightshift theme apply ghost-protocol --dry-run   # show exactly what would change; writes nothing
+nightshift theme apply ghost-protocol             # applies to Windows Terminal, with backup/rollback
 ```
 
 Run `nightshift` with no arguments for the interactive menu.
@@ -120,7 +124,7 @@ Run `nightshift` with no arguments for the interactive menu.
 | `nightshift status` | Show version, OS, detected terminal, active theme, config status |
 | `nightshift theme list` | List built-in and user themes |
 | `nightshift theme preview <id>` | Preview a theme's color swatches and its WCAG contrast ratios |
-| `nightshift theme apply <id>` | Apply a theme to Windows Terminal (backs up first) |
+| `nightshift theme apply <id> [--dry-run]` | Apply a theme to Windows Terminal (backs up first). `--dry-run` prints exactly which keys would be added or replaced and writes nothing |
 | `nightshift theme validate <file>` | Validate a theme JSON file, reporting every schema issue with its field path (exit 1 if invalid). Contrast warnings are advisory and do not fail validation |
 | `nightshift theme create` | Create a user theme by cloning an existing one. `--id`, `--name` (both required), `--from <themeId>` (default `ghost-protocol`), `--description`, `--overwrite`. A built-in id is refused under any flag |
 | `nightshift theme remove <id>` | Remove a user-created theme. Built-in themes are refused, and so is the active theme (switch away first) |
@@ -128,7 +132,7 @@ Run `nightshift` with no arguments for the interactive menu.
 | `nightshift font check <family>` | Report whether a font family is installed (exit 1 if it is not) |
 | `nightshift profile list` | List built-in and user profiles, with active-profile marker |
 | `nightshift profile show <id>` | Show a profile's details, including theme resolution |
-| `nightshift profile apply <id>` | Apply a profile's theme to Windows Terminal (backs up first) |
+| `nightshift profile apply <id> [--dry-run]` | Apply a profile's theme to Windows Terminal (backs up first). `--dry-run` previews the change and writes nothing |
 | `nightshift profile import <file>` | Import a profile JSON file (`--overwrite` to replace an existing user profile) |
 | `nightshift profile export <id>` | Export a profile to JSON (`--output <path>`, `--overwrite`) |
 | `nightshift profile remove <id>` | Remove a user-imported profile (built-in profiles can't be removed) |
@@ -136,6 +140,8 @@ Run `nightshift` with no arguments for the interactive menu.
 | `nightshift backup create` | Back up the current Windows Terminal `settings.json` |
 | `nightshift backup list` | List existing backups |
 | `nightshift restore <backupId>` | Restore a specific backup by id |
+| `nightshift completion powershell` | Print a PowerShell Tab-completion script (see "Shell completion" below) |
+| `nightshift completion values <kind>` | Print the ids of one kind (`theme`, `profile`, `backup`), one per line. Used by the generated completion script |
 
 Global options: `--no-color` (anywhere on the command line, including after a subcommand),
 `--version`, `--help`.
@@ -287,6 +293,89 @@ refuses that outright rather than shadowing a bundled profile.
   profile and theme in NIGHTSHIFT's config in a single atomic write (so they can never
   disagree, even if a crash happens mid-operation). If updating that config fails after the
   terminal was already changed, the terminal backup is restored too.
+
+## Previewing a write: `--dry-run`
+
+`theme apply` and `profile apply` modify a file NIGHTSHIFT does not own. Both accept
+`--dry-run`, which computes the merge, prints the specific keys it would touch, and writes
+nothing at all - no `settings.json` change and no backup:
+
+```text
+> nightshift theme apply ghost-protocol --dry-run
+Dry run - `theme apply ghost-protocol` would change:
+
+  C:\Users\you\AppData\Local\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json
+  -> backed up first into C:\Users\you\AppData\Roaming\nightshift\backups
+
+  ~ replace  schemes[] (name "Ghost Protocol")  background #0A0D0B, foreground #DCE6DF + 16 ANSI colors
+  + add      profiles.defaults.colorScheme      "Ghost Protocol"
+  ~ replace  profiles.defaults.font.face        "Consolas" -> "Cascadia Code"
+  ~ replace  profiles.defaults.font.size        12 -> 14
+
+Every other key in that file is preserved untouched.
+The write is verified after it lands, and rolled back on failure.
+
+Nothing was written - no settings.json change, and no backup taken.
+  -> Re-run without --dry-run to apply: `nightshift theme apply ghost-protocol`
+```
+
+Notes:
+
+- `+ add` and `~ replace` are decided by reading your current `settings.json`, so the preview
+  tells you whether you are gaining a key or overwriting a value.
+- The path shown is the path that gets written. If your `settings.json` is a symlink, the
+  resolved target is named along with the link.
+- A theme whose font is not installed is reported here too, because applying it is the moment
+  that is actionable - Windows Terminal silently substitutes a different font otherwise.
+- An unknown theme or profile id still exits **1** under `--dry-run`: you asked about something
+  that does not exist. A `settings.json` NIGHTSHIFT would refuse to rewrite is also reported
+  here rather than discovered mid-write.
+- Default behaviour is unchanged: apply is not interactive and never prompts, so existing
+  scripts keep working.
+
+## Shell completion (PowerShell)
+
+Backup ids look like `1794752118976-c615f1f6`, which nobody should have to type. Tab completion
+reads them from the live registries:
+
+```powershell
+# Try it in the current session
+nightshift completion powershell | Out-String | Invoke-Expression
+
+# Install it permanently
+nightshift completion powershell >> $PROFILE
+
+# ...or keep $PROFILE tidy by sourcing a separate file
+nightshift completion powershell > "$(Split-Path $PROFILE)\nightshift-completion.ps1"
+Add-Content $PROFILE '. "$PSScriptRoot\nightshift-completion.ps1"'
+```
+
+Then:
+
+```powershell
+nightshift theme apply <Tab>     # ghost-protocol monolith redline deep-space --dry-run --help
+nightshift restore <Tab>         # 1794752118976-c615f1f6 ...
+nightshift profile apply <Tab>   # ghost-protocol-default monolith-default ...
+```
+
+Details worth knowing:
+
+- **PowerShell only.** Windows is the only supported platform, so a bash or zsh script would
+  imply support NIGHTSHIFT does not have.
+- **Re-generate it after upgrading.** The command, subcommand and option table is generated
+  from the live command tree at the moment you run `completion powershell`; the *values*
+  (theme/profile/backup ids) are always read fresh, so a theme you add today completes today.
+- **Cost of a Tab press** (measured, Windows 11, Node 22): ~3 ms for commands and options,
+  which need no process; ~400 ms for id completion, which spawns
+  `nightshift completion values <kind>` - ~165 ms of Node startup plus ~235 ms for the schema
+  validation the registries perform.
+- **Options appear on an empty Tab**, not after a bare `-`: PowerShell does not invoke a native
+  completer for a lone `-` or `--` (its own completers behave the same way), so an empty Tab
+  press is the only one that can surface a flag like `--dry-run`.
+- **Font families are deliberately not completed.** Listing them means parsing all 359 font
+  files on this machine (`font list` measures 572 ms end to end, and more on a cold cache), and
+  the only argument that would benefit is the diagnostic `font check`. A Tab press that slow is
+  worse than no completion.
 
 ## Backup and restore
 

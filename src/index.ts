@@ -49,6 +49,7 @@ const profileModule = () => import("./cli/commands/profile.js");
 const doctorModule = () => import("./cli/commands/doctor.js");
 const backupModule = () => import("./cli/commands/backup.js");
 const fontModule = () => import("./cli/commands/font.js");
+const completionModule = () => import("./cli/commands/completion.js");
 
 program
   .command("init")
@@ -78,7 +79,10 @@ theme
 theme
   .command("apply <id>")
   .description("Apply a theme to Windows Terminal")
-  .action(async (id: string) => (await themeModule()).runThemeApply(id));
+  .option("--dry-run", "show exactly what would change in settings.json and write nothing")
+  .action(async (id: string, options: { dryRun?: boolean }) =>
+    (await themeModule()).runThemeApply(id, options),
+  );
 theme
   .command("validate <file>")
   .description("Validate a theme JSON file and report every issue it has")
@@ -117,7 +121,10 @@ profile
 profile
   .command("apply <id>")
   .description("Apply a profile's theme to Windows Terminal")
-  .action(async (id: string) => (await profileModule()).runProfileApply(id));
+  .option("--dry-run", "show exactly what would change in settings.json and write nothing")
+  .action(async (id: string, options: { dryRun?: boolean }) =>
+    (await profileModule()).runProfileApply(id, options),
+  );
 profile
   .command("import <file>")
   .description("Import a profile JSON file into NIGHTSHIFT's user profile directory")
@@ -162,6 +169,26 @@ backup
   .command("list")
   .description("List existing backups")
   .action(async () => (await backupModule()).runBackupList());
+
+// Tab completion. `powershell` is a subcommand rather than an argument so that
+// `completion values` can live beside it without the two being ambiguous, and so
+// `nightshift completion <TAB>` completes the shell name from the same table as everything else.
+const completion = program
+  .command("completion")
+  .description("Emit a shell completion script, or the values it completes")
+  .addHelpText(
+    "after",
+    "\nPowerShell is the only shell offered: Windows is NIGHTSHIFT's only supported platform,\n" +
+      "so shipping bash or zsh scripts would imply support the product does not have.\n",
+  );
+completion
+  .command("powershell")
+  .description("Print a PowerShell completion script for `nightshift`")
+  .action(async () => (await completionModule()).runCompletionPowerShell(program));
+completion
+  .command("values <kind>")
+  .description("List ids of one kind (theme|profile|backup) for the generated script to complete")
+  .action(async (kind: string) => (await completionModule()).runCompletionValues(kind));
 
 program
   .command("restore <backupId>")

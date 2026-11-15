@@ -1,7 +1,7 @@
 {
-  "name": "nightshift-cli",
+  "name": "nightshift-terminal",
   "version": "0.4.0",
-  "description": "An open-source developer terminal customization toolkit. Build your own terminal experience with themes, profiles, widgets, and integrations.",
+  "description": "An open-source developer terminal customization toolkit. Themes, profiles and safe apply/rollback for Windows Terminal.",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -18,7 +18,8 @@
     "windows-terminal",
     "theme",
     "customization",
-    "developer-tools"
+    "developer-tools",
+    "jsonc"
   ],
   "bin": {
     "nightshift": "./dist/index.js"

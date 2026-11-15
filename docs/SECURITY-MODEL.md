@@ -34,7 +34,7 @@ empty — but it did not support the conclusion:
 1. "No patched 3.x exists" argues *for* migrating, not for staying. It means 3.x is
    permanently and unfixably flagged by the advisory database.
 2. We cannot prove non-reachability to a downstream consumer. They run `npm audit` on their
-   own tree, see a high-severity finding in a runtime dependency of `nightshift-cli`, and
+   own tree, see a high-severity finding in a runtime dependency of `nightshift-terminal`, and
    stop there.
 3. The migration cost was estimated as "every schema and parse call site". **Measured, it was
    one line.** Three schema files, two `.error.issues` consumers, and zero tests asserting on

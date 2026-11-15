@@ -6,8 +6,12 @@ expected result — if a step cannot be checked by running something, it does no
 **Step 10 publishes to npm and requires explicit human authorization. Nothing in this repo
 performs it automatically, and nothing should.**
 
-Preconditions: `nightshift-cli` has **never been published**. The first release therefore also
-has to settle the open items in §0, which later releases can skip.
+Preconditions: this package has **never been published**. The first release therefore also has
+to settle the open items in §0, which later releases can skip.
+
+> **The name check in §0 was run and it failed.** `nightshift-cli` is taken on npm by an
+> unrelated project, which also claims the `nightshift` binary. The package is now
+> `nightshift-terminal` (#39). The binary is unchanged.
 
 ---
 
@@ -19,8 +23,12 @@ Skip once done. All three require a human decision, not a command.
       minor bump may carry breaking changes.
 - [ ] **`repository`, `bugs`, and `homepage` in `package.json`.** npm builds the package page's
       links from these; without them a published page has no route back to the source.
-- [ ] **Registry name availability.** `npm view nightshift-cli version` — a `404` means the name
-      is free. Anything else means pick another name before going further.
+- [x] **Registry name availability.** `npm view <name> version` — a `404` means the name is
+      free. Anything else means pick another name before going further. **Done, and it caught
+      a real collision:** `nightshift-cli` returned `0.2.0` — an unrelated published package
+      ("Supervisor for unattended AI agent runs", different author) that also declares
+      `bin: nightshift`. Renamed to `nightshift-terminal`, verified free. Re-run this check for
+      any future rename; it is cheap and it already paid for itself.
 - [ ] **npm account with publish rights and 2FA enabled**, authenticated locally:
       `npm whoami` prints the expected user.
 
@@ -109,7 +117,7 @@ Then, from `$TESTDIR`, with scratch config directories so nothing touches the re
 
 ```
 APP=$(mktemp -d); LOCAL=$(mktemp -d)
-node node_modules/nightshift-cli/dist/index.js --version      # exact release version
+node node_modules/nightshift-terminal/dist/index.js --version      # exact release version
 ./node_modules/.bin/nightshift --version                      # same, via the generated shim
 APPDATA=$APP LOCALAPPDATA=$LOCAL ./node_modules/.bin/nightshift --help
 APPDATA=$APP LOCALAPPDATA=$LOCAL ./node_modules/.bin/nightshift theme list     # 4 built-ins
@@ -183,9 +191,9 @@ hand.
 ## 11. Post-publish verification
 
 ```
-npm view nightshift-cli version                       # the new version
+npm view nightshift-terminal version                       # the new version
 TMP=$(mktemp -d); cd "$TMP" && npm init -y >/dev/null
-npm install nightshift-cli
+npm install nightshift-terminal
 ./node_modules/.bin/nightshift --version              # the new version
 ```
 

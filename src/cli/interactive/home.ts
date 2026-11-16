@@ -26,7 +26,7 @@ import {
 } from "../commands/profile.js";
 import { runProfileList } from "../commands/profile.js";
 import { runDoctor } from "../commands/doctor.js";
-import { runFontList, runFontCheck } from "../commands/font.js";
+import { runFontList, runFontCheck, runFontInstall } from "../commands/font.js";
 import { runBackupCreate, runBackupList } from "../commands/backup.js";
 import { runStatus } from "../commands/status.js";
 
@@ -129,7 +129,7 @@ async function runIntegrationsMenu(): Promise<void> {
 async function runSystemMenu(): Promise<void> {
   const choice = await promptSelect("System", [
     { label: "Setup", value: "setup", hint: "first-run configuration" },
-    { label: "Fonts", value: "fonts", hint: "detect installed fonts (installing: not yet)" },
+    { label: "Fonts", value: "fonts", hint: "detect and install fonts" },
     { label: "Backups", value: "backups" },
     { label: "Settings", value: "settings" },
     { label: "Back", value: "back" },
@@ -142,16 +142,20 @@ async function runSystemMenu(): Promise<void> {
 }
 
 /**
- * Detection is real; installation is not. Installing a font writes outside NIGHTSHIFT's own
- * config directory, so it needs the same shown-proposal-and-approval flow `setup` has - it is
- * tracked separately and stays labelled here rather than being hidden, so the menu never implies
- * a capability that does not exist.
+ * Installing a font writes outside NIGHTSHIFT's own config directory, so this entry hands
+ * straight to `runFontInstall`, which prints the proposal and asks for approval itself - the
+ * menu must not become a second approval flow, and the hint names the one thing the install
+ * cannot finish (the registry value).
  */
 async function runFontsMenu(): Promise<void> {
   const action = await promptSelect("Fonts", [
     { label: "List installed fonts", value: "list" },
     { label: "Check a specific family", value: "check", hint: "e.g. the font your theme asks for" },
-    { label: "Install a font", value: "install", hint: "not implemented" },
+    {
+      label: "Install a font",
+      value: "install",
+      hint: "from a local file; copy only, no registry",
+    },
     { label: "Back", value: "back" },
   ]);
   if (!action || action === "back") return;
@@ -166,11 +170,9 @@ async function runFontsMenu(): Promise<void> {
     runFontCheck(family);
     return;
   }
-  log.warn(
-    "Font installation is not implemented. It writes outside NIGHTSHIFT's config directory, so " +
-      "it needs an explicit proposal-and-approval flow first. Install fonts with Windows' own " +
-      "font installer for now, then run `nightshift font check <family>` to confirm.",
-  );
+  const source = await promptText("Path to the font file or directory to install:");
+  if (!source) return;
+  await runFontInstall(source);
 }
 
 function runSettings(): void {

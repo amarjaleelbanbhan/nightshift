@@ -108,6 +108,9 @@ describe("nightshift completion powershell", () => {
     expect(values.get("theme validate")).toBe("");
     expect(values.get("profile import")).toBe("");
     expect(values.get("font check")).toBe("");
+    // `font install <path>` takes a filesystem path, not an id from a registry, so it gets no
+    // completion values - the same answer `theme validate <file>` gets, for the same reason.
+    expect(values.get("font install")).toBe("");
     expect(values.get("theme list")).toBe("");
     // Every command in the tree is in the table, including the root.
     expect(values.has("")).toBe(true);

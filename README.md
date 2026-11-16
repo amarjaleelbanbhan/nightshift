@@ -8,9 +8,10 @@ and shells later — not a terminal emulator or a replacement for them.
 
 This is an early (`0.4.0`) development release. It implements a real, working foundation:
 theme management (including authoring and validation) and profile management, both with safe
-apply/rollback to Windows Terminal, guided first-run setup, read-only font detection, and
-backup/restore. It does not implement the full long-term vision (marketplace, widgets, Studio,
-Claude Code integration, font *installation*, shell integration) — those are tracked honestly
+apply/rollback to Windows Terminal, guided first-run setup, font detection plus a copy-only
+`font install`, and backup/restore. It does not implement the full long-term vision
+(marketplace, widgets, Studio, Claude Code integration, font *downloading*, shell
+integration) — those are tracked honestly
 below, not advertised as done. See `ROADMAP_STATUS.md` for the detailed phase-by-phase status of
 the full 1.0.0 roadmap.
 
@@ -43,6 +44,14 @@ the full 1.0.0 roadmap.
   *active theme's* requested font is actually installed. That check exists because Windows
   Terminal silently substitutes a different font when the requested family is missing, and
   `theme apply` used to print success without mentioning it.
+- `font install <path> [--yes]`: copies a local `.ttf`/`.otf`/`.ttc` file, or every font file in
+  a directory, into your per-user font directory. It uses the same proposal-then-approve
+  structure as `setup` — it prints every file it would write and writes nothing until you
+  approve; without a TTY it prints the proposal and writes nothing, and `--yes` is the only way
+  to approve without a prompt. It then re-runs detection to confirm the family is really there.
+  **It does not create the registry value Windows uses to enumerate fonts**, and says so both
+  in the proposal and after the copy, with the exact `reg add` command to finish the job. It
+  never downloads anything (see "Known limitations").
 - PowerShell Tab completion (`completion powershell`), completing commands, options and -
   the part that matters - theme, profile and backup ids read from the live registries.
 - A documented exit-code contract (see "Exit codes" below) and `--no-color` / `NO_COLOR`
@@ -73,14 +82,19 @@ the full 1.0.0 roadmap.
   `env`, `permissions` and `hooks`, any of which may contain a token, so everything else is
   discarded at the schema boundary rather than risked in a `doctor` report you might paste into
   a bug thread.
-- Font management: detection only. NIGHTSHIFT reads the installed font families out of Windows'
-  font directories and can tell you whether a family is present; it does **not** install,
-  download or remove fonts. Nerd Font flagging is a name-based heuristic (see "Known
-  limitations"). Non-Windows platforms report `unsupported` rather than guessing.
+- Font management: detection, plus a **copy-only** install. NIGHTSHIFT reads the installed font
+  families out of Windows' font directories, tells you whether a family is present, and can
+  copy a font file you already have into your per-user font directory — but it does not write
+  the font registry key, does not download fonts, and does not remove them. Nerd Font flagging
+  is a name-based heuristic (see "Known limitations"). Non-Windows platforms report
+  `unsupported` rather than guessing.
 
 **Planned (not implemented — do not expect these to work)**
 
-- Font installation (downloading and installing a font for you).
+- Downloading a font for you. `font install` takes a local path; there is no network operation
+  anywhere in NIGHTSHIFT.
+- Registering an installed font with Windows (the `HKCU\...\Fonts` registry value). `font
+  install` copies the file and prints the `reg add` command you need to finish.
 - NIGHTSHIFT Studio (visual editor).
 - Marketplace / community registry.
 - Widget system, ASCII Art Studio, shell prompt adapters (Starship integration).
@@ -151,6 +165,7 @@ Run `nightshift` with no arguments for the interactive menu.
 | `nightshift theme remove <id>` | Remove a user-created theme. Built-in themes are refused, and so is the active theme (switch away first) |
 | `nightshift font list` | List font families installed on this system, flagging probable Nerd Fonts |
 | `nightshift font check <family>` | Report whether a font family is installed (exit 1 if it is not) |
+| `nightshift font install <path> [--yes]` | Copy a local `.ttf`/`.otf`/`.ttc` file, or a directory of them, into your per-user font directory. Prints the full proposal first and writes nothing without approval; without a TTY it writes nothing and `--yes` approves without a prompt. Does **not** write the font registry value — the finishing `reg add` command is printed |
 | `nightshift profile list` | List built-in and user profiles, with active-profile marker |
 | `nightshift profile show <id>` | Show a profile's details, including theme resolution |
 | `nightshift profile apply <id> [--dry-run]` | Apply a profile's theme to Windows Terminal (backs up first). `--dry-run` previews the change and writes nothing |
@@ -459,8 +474,24 @@ config field exists for it.
   "Nerd Font" or an "NF" token. Glyph coverage is not inspected, so a patched font under a
   different name is not detected, and a font merely *named* like one is flagged. The command's
   own output says so.
-- Font *installation* is not implemented. `font list`/`font check` are read-only, and font
-  detection is Windows-only (other platforms report `unsupported` rather than guessing).
+- **`font install` copies a font file; it does not register it with Windows.** A per-user font
+  install on Windows is two steps: the file into `%LOCALAPPDATA%\Microsoft\Windows\Fonts`, and a
+  value naming it under `HKCU\Software\Microsoft\Windows NT\CurrentVersion\Fonts`. NIGHTSHIFT
+  does only the first, because the second needs `reg.exe` or a Win32 call and there is no
+  child-process execution anywhere in `src/` (and no new dependency was worth it for one write).
+  So after `font install`, `nightshift font check` and `font list` will see the family, and
+  applications that read the font registry — including Windows Terminal's font picker — may
+  not, until you run the `reg add` command the command prints, or open the font directory and
+  use Windows' own right-click **Install**. The proposal states this before you approve it, and
+  the result states it again afterwards; `font install` never reports the registration as done.
+- `font install` reads from a **local path only** — a file or a directory of font files. It
+  never downloads. One file is capped at 32 MB and one directory install at 256 font files,
+  only `.ttf`/`.otf`/`.ttc` are accepted, a path containing a `..` segment is refused (the
+  proposal has to name a path you can verify), and a file with a font extension but no readable
+  family name in its `name` table is refused rather than copied — it could not be verified
+  afterwards. Fonts are never removed, and `%WINDIR%\Fonts` (all users) is never written.
+- Font detection and installation are Windows-only; other platforms report `unsupported` rather
+  than guessing.
 - Contrast checking covers 6 color roles against the theme's own background. It does not check
   ANSI colors, color-on-color pairs, or how your actual terminal renders them (transparency,
   acrylic and font smoothing all change the real result).

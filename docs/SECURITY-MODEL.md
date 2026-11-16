@@ -141,6 +141,15 @@ path, a command, or any other sink. See `docs/development/SECURITY_AUDIT.md` F-2
 | Profile id (CLI arg to `profile remove/show/apply <id>`) | `resolveSafePath` traversal guard + id regex |
 | Backup id (CLI arg to `restore <id>`) | `resolveSafePath` traversal guard |
 | Windows Terminal `settings.json` | Parsed as JSON, must be a non-array object; element shapes not assumed; unrelated keys preserved, never executed |
+| Font path (CLI arg to `font install <path>`) | `..` segments refused, symlinked source refused, `.ttf`/`.otf`/`.ttc` only, 32 MB per file and 256 files per directory install checked via `stat` before any read, must declare a family in its sfnt `name` table, destination `resolveSafePath` under `%LOCALAPPDATA%\Microsoft\Windows\Fonts` + `assertNotSymlink`, written with `atomicWriteFileSync` |
 
 No path in 0.2.0 executes code from a theme, profile, or imported file. There is no network
 call and no child-process execution anywhere in `src/` (verified by grep).
+
+**`font install` is deliberately bounded by that last sentence.** Registering a font with
+Windows means writing `HKCU\Software\Microsoft\Windows NT\CurrentVersion\Fonts`, which needs
+`reg.exe` (a child process) or a Win32 call (a native dependency). Rather than take either, the
+command copies the file and reports plainly — in the proposal, before approval, and again in
+the result — that registration did not happen, printing the `reg add` command for the user to
+run themselves. A font *file* is never parsed beyond its `name` table and is never executed;
+the bytes are copied verbatim.

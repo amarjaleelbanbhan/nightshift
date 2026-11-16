@@ -22,6 +22,41 @@ All notable changes to this project are documented here.
   reach a `doctor` report. A malformed or oversized file is reported as such rather than
   crashing the one command people run when something is already wrong, and the whole check is
   advisory: it never changes `doctor`'s exit code.
+- `nightshift font install <path> [--yes]` — the write half of font support, and the first thing
+  that lets a theme's requested font actually be obtained rather than only diagnosed. It copies
+  a local `.ttf`/`.otf`/`.ttc` file, or every font file in a directory, into
+  `%LOCALAPPDATA%\Microsoft\Windows\Fonts`.
+
+  It reuses `setup`'s proposal-then-approve structure rather than inventing a second one:
+  `buildFontInstallPlan` and `renderFontInstallProposal` perform no writes at all, so the
+  non-interactive path is *structurally* unable to touch the font directory. Without a TTY it
+  prints the proposal and writes nothing; `--yes` is the only way to approve without a prompt.
+  After the copy it re-runs the existing detector (`findInstalledFont`) and reports a family it
+  cannot find as a failure, instead of assuming the copy was enough.
+
+  **It does not register the font with Windows.** A per-user install is a file copy *and* a
+  value under `HKCU\Software\Microsoft\Windows NT\CurrentVersion\Fonts`; the registry needs
+  `reg.exe` or a Win32 call, and `src/` contains no child-process execution and gains no
+  dependency for one write. So the proposal says registration will not happen *before* you
+  approve it, the result says it again afterwards, and the exact `reg add` command to finish is
+  printed. Nothing claims the install is complete when it is not.
+
+  **It never downloads.** Fetching a font would be this project's first network operation and a
+  threat-model change; the path is local-only. The argument is untrusted input: `.ttf`/`.otf`/
+  `.ttc` only, 32 MB per file, 256 files per directory install, `..` segments and symlinked
+  sources refused, destinations resolved with `resolveSafePath` under the font directory and
+  symlink-checked, and a file whose sfnt `name` table yields no family refused rather than
+  copied — an install that could not be verified is one this command must not report as done.
+
+- The interactive **Fonts** menu's "Install a font" entry is now real, and hands straight to the
+  same approval flow rather than becoming a second one.
+
+### Changed
+
+- `atomicWriteFileSync` accepts a `Buffer` as well as a string, so the font copy gets the same
+  crash-safety guarantee as every other write instead of a second write path.
+- `font check`'s failure hint now points at `font install <path>` instead of telling the user
+  NIGHTSHIFT cannot install fonts.
 
 ## [0.4.0] - 2026-11-15
 

@@ -87,8 +87,10 @@ Starship *configuration*) — those are tracked honestly below, not advertised a
   not what's assumed, and now also reports active profile and user-profile-directory health.
 - Interactive home menu (`nightshift` with no args), grouped into Workspace / Customization /
   Integrations / System, with unimplemented sections clearly labeled instead of faked — Setup,
-  Fonts and Shell Manager are now real entries there, ASCII Art Studio, Widgets, Terminal
-  Manager and Claude Code are still marked `planned`. Built on `@clack/prompts`; falls back to
+  Fonts and Shell Manager are now real entries there; Terminal Manager and Claude Code are
+  still marked `planned`. ASCII Art Studio and Widgets were removed rather than relabelled,
+  because both are closed as not planned (#22, #17) and a `planned` label for something nobody
+  intends to build is a promise. Built on `@clack/prompts`; falls back to
   printing status and exiting if run without a real terminal (CI, pipes) instead of hanging.
 - One-shot commands (`status`, `doctor`, `theme list`, `profile list`, `font list`,
   `backup list`) render through a shared, terminal-width-aware table/panel design system
@@ -105,11 +107,18 @@ Starship *configuration*) — those are tracked honestly below, not advertised a
   discarded at the schema boundary rather than risked in a `doctor` report you might paste into
   a bug thread.
 - Font management: detection, plus a **copy-only** install. NIGHTSHIFT reads the installed font
-  families out of Windows' font directories, tells you whether a family is present, and can
-  copy a font file you already have into your per-user font directory — but it does not write
-  the font registry key, does not download fonts, and does not remove them. Nerd Font flagging
-  is a name-based heuristic (see "Known limitations"). Non-Windows platforms report
-  `unsupported` rather than guessing.
+  families out of Windows' font directories, tells you whether a family is present, and can copy
+  a font file you already have into your per-user font directory — but it does not write the
+  font registry key, does not download fonts, and does not remove them. Nerd Font flagging is a
+  name-based heuristic (see "Known limitations"). Non-Windows platforms report `unsupported`
+  rather than guessing.
+- Shell and Starship integration: the **shell-profile half is done** (see "Implemented"); the
+  **Starship half is detection only**. NIGHTSHIFT looks for the `starship` binary on your PATH
+  (with `fs`, never by running it) and for a `starship.toml`, reports both, and — when the
+  binary is there — adds a guarded Starship init line to its managed block. It does **not**
+  generate, edit or read a `starship.toml`, so your prompt's appearance still comes entirely
+  from your own Starship config. PowerShell (both 5.1 and 7+) is the only shell written to; a
+  detected bash or zsh is reported and never edited.
 
 **Planned (not implemented — do not expect these to work)**
 
@@ -117,33 +126,30 @@ Starship *configuration*) — those are tracked honestly below, not advertised a
   anywhere in NIGHTSHIFT.
 - Registering an installed font with Windows (the `HKCU\...\Fonts` registry value). `font
   install` copies the file and prints the `reg add` command you need to finish.
-- Claude Code integration: detection only (`doctor` reports whether `~/.claude/settings.json`
-  exists). No settings are read or written.
-- Font management: detection only. NIGHTSHIFT reads the installed font families out of Windows'
-  font directories and can tell you whether a family is present; it does **not** install,
-  download or remove fonts. Nerd Font flagging is a name-based heuristic (see "Known
-  limitations"). Non-Windows platforms report `unsupported` rather than guessing.
-- Shell and Starship integration: the **shell-profile half is done** (see "Implemented"); the
-  **Starship half is detection only**. NIGHTSHIFT looks for the `starship` binary on your PATH
-  (with `fs`, never by running it) and for a `starship.toml`, reports both, and — when the
-  binary is there — adds a guarded Starship init line to its managed block. It does **not**
-  generate, edit or read a `starship.toml`, so your prompt's appearance still comes entirely
-  from your own Starship config. PowerShell (both 5.1 and 7+) is the only shell written to;
-  a detected bash or zsh is reported and never edited.
+- Generating a `starship.toml` from a NIGHTSHIFT theme. `shell init` initialises Starship if you
+  have it; it never writes its config.
+- Editing `.bashrc`, `.zshrc` or any non-PowerShell startup file.
+- Linux/macOS terminal adapters (Ghostty, Kitty, iTerm2, GNOME Terminal) — deferred, with the
+  unblock conditions recorded on #19. They are buildable but not verifiable on Windows-only CI,
+  and this project does not claim support it has not exercised.
 
-**Planned (not implemented — do not expect these to work)**
+**Not planned — decided against, not forgotten**
 
-- Generating a `starship.toml` from a NIGHTSHIFT theme. `shell init` initialises Starship if
-  you have it; it never writes its config.
-- Editing `.bashrc`/`.zshrc` or any non-PowerShell startup file.
-- Font installation (downloading and installing a font for you).
-- NIGHTSHIFT Studio (visual editor).
-- Font installation (downloading and installing a font for you).
-- NIGHTSHIFT Studio (visual editor). `theme edit` covers changing a colour from the CLI or the
-  interactive menu; there is no live visual editor.
-- Marketplace / community registry.
-- Widget system, ASCII Art Studio.
-- Linux/macOS terminal adapters (Ghostty, Kitty, iTerm2, GNOME Terminal).
+These were on the roadmap and were closed deliberately. Each issue carries the full reasoning.
+
+- A visual editor / "NIGHTSHIFT Studio" (#20) — it needs a localhost HTTP server, which breaks
+  the no-network property the security model rests on, and a browser click is a weaker consent
+  signal than the proposal flow. `theme edit` delivers the actual value: change a colour from
+  the CLI or the interactive menu, with the new contrast ratios shown before the write.
+- Marketplace / community registry (#21) — it would add this project's first network egress, put
+  remote content into the one path that writes a file we do not own, and commit a single
+  maintainer to indefinite submission review and takedowns. A theme is one JSON file; share it
+  by gist or PR and check it with `theme validate`.
+- Widget engine (#17) — no render surface. No daemon is permitted, Windows Terminal exposes no
+  panel, and `status` and `doctor` already are the dashboard.
+- ASCII Art Studio (#22) — contradicts the product's own visual direction, which
+  `src/banners/startup.ts` has documented in shipped code since Phase 1 removed the ASCII
+  wordmark.
 
 ## Requirements
 

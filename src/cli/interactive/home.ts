@@ -28,7 +28,6 @@ import {
 import { runProfileList } from "../commands/profile.js";
 import { runDoctor } from "../commands/doctor.js";
 import { runFontList, runFontCheck, runFontInstall } from "../commands/font.js";
-import { runFontList, runFontCheck } from "../commands/font.js";
 import { runShellStatus, runShellInit, runShellRemove } from "../commands/shell.js";
 import { runBackupCreate, runBackupList } from "../commands/backup.js";
 import { runStatus } from "../commands/status.js";
@@ -62,7 +61,7 @@ export async function runInteractiveHome(): Promise<void> {
       {
         label: "Customization",
         value: "customization",
-        hint: "themes, profiles, ASCII art, widgets",
+        hint: "themes and profiles",
       },
       { label: "Integrations", value: "integrations", hint: "terminal, shell, Claude Code" },
       { label: "System", value: "system", hint: "setup, fonts, backups, settings" },
@@ -104,14 +103,17 @@ async function runCustomizationMenu(): Promise<void> {
   const choice = await promptSelect("Customization", [
     { label: "Theme Studio", value: "theme" },
     { label: "Profile Manager", value: "profile" },
-    { label: "ASCII Art Studio", value: "ascii", hint: "planned" },
-    { label: "Widgets", value: "widgets", hint: "planned" },
     { label: "Back", value: "back" },
   ]);
   if (!choice || choice === "back") return;
+  // ASCII Art Studio and Widgets used to sit here labelled `planned`. Both are now closed as
+  // not planned - #22 because `src/banners/startup.ts` already documents why this product
+  // deliberately does not render letter art, and #17 because a widget engine has no render
+  // surface here (no daemon is permitted, Windows Terminal exposes no panel, and `status` and
+  // `doctor` already are the dashboard). A menu entry for a feature nobody intends to build is
+  // a promise, so it goes with the decision rather than lingering as an honest-looking label.
   if (choice === "theme") await runThemeMenu();
   if (choice === "profile") await runProfileMenu();
-  if (choice === "ascii" || choice === "widgets") log.warn(PLANNED);
 }
 
 async function runIntegrationsMenu(): Promise<void> {

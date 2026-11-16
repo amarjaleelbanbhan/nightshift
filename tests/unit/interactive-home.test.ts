@@ -254,9 +254,17 @@ describe("interactive home dispatch", () => {
     expect(await session("exit")).toEqual(["status", "outro"]);
   });
 
+  it("no longer offers the sections that were closed as not planned", async () => {
+    // ASCII Art Studio (#22) and Widgets (#17) were closed rather than built, so their menu
+    // entries went with the decision. An unknown value must fall through to the parent menu
+    // without warning or dispatching - a `planned` label for something nobody intends to
+    // build is a promise, and this asserts the promise is gone rather than relabelled.
+    const result = await session("customization", "widgets", "exit");
+    expect(result.filter((c) => c.startsWith("warn:"))).toHaveLength(0);
+    expect(result).toEqual(["status", "outro"]);
+  });
+
   it.each([
-    ["customization widgets", ["customization", "widgets"]],
-    ["customization ascii", ["customization", "ascii"]],
     ["integrations claude", ["integrations", "claude"]],
     ["integrations terminal", ["integrations", "terminal"]],
   ])("labels %s as planned instead of dispatching it", async (_label, script) => {

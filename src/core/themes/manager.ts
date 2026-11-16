@@ -53,6 +53,32 @@ export interface ThemeValidationResult {
   theme?: Theme | undefined;
 }
 
+/** Where a user theme with this id lives. Traversal-checked, so `../../evil` never resolves. */
+function userThemePath(id: string): string {
+  return resolveSafePath(getUserThemesDir(), `${id}.json`);
+}
+
+/**
+ * The one place a user theme file is written.
+ *
+ * `createTheme` and `editTheme` had this same three-line sequence - symlink check, mkdir,
+ * atomic write of `JSON.stringify(theme, null, 2)` - copied into each of them. Nothing was
+ * wrong with either copy, which is exactly the problem: the next change to how this project
+ * writes a theme (an indentation decision, a tighter guard, a permissions fix) would have
+ * landed in one and not the other, and the two would have started producing different files
+ * for the same product. This is the same reasoning that put the backup/rollback sequence in
+ * one `recordActiveState` instead of two copies (A-5).
+ *
+ * Throws rather than returning a result: both callers already wrap it to attach their own
+ * message, and they word it differently ("the new theme" vs "the theme").
+ */
+function writeUserThemeFile(theme: Theme): void {
+  const destPath = userThemePath(theme.id);
+  assertNotSymlink(destPath);
+  fs.mkdirSync(getUserThemesDir(), { recursive: true });
+  atomicWriteFileSync(destPath, JSON.stringify(theme, null, 2));
+}
+
 function toIssues(error: {
   issues: ReadonlyArray<{ path: PropertyKey[]; message: string }>;
 }): ThemeIssue[] {
@@ -186,12 +212,9 @@ export function createTheme(options: {
     };
   }
 
-  const destDir = getUserThemesDir();
-  const destPath = resolveSafePath(destDir, `${theme.id}.json`);
+  const destPath = userThemePath(theme.id);
   try {
-    assertNotSymlink(destPath);
-    fs.mkdirSync(destDir, { recursive: true });
-    atomicWriteFileSync(destPath, JSON.stringify(theme, null, 2));
+    writeUserThemeFile(theme);
   } catch (error) {
     return { ok: false, message: `Failed to write the new theme: ${(error as Error).message}` };
   }
@@ -327,7 +350,7 @@ export function editTheme(options: {
   }
   const theme = parsed.data;
   const contrast = auditThemeContrast(theme);
-  const destPath = resolveSafePath(getUserThemesDir(), `${theme.id}.json`);
+  const destPath = userThemePath(theme.id);
   const colourCount = `${changes.length} colour${changes.length === 1 ? "" : "s"}`;
 
   if (options.dryRun) {
@@ -343,8 +366,7 @@ export function editTheme(options: {
   }
 
   try {
-    assertNotSymlink(destPath);
-    atomicWriteFileSync(destPath, JSON.stringify(theme, null, 2));
+    writeUserThemeFile(theme);
   } catch (error) {
     return { ...refuse(`Failed to write the theme: ${(error as Error).message}`), changes };
   }

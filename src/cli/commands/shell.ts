@@ -6,6 +6,7 @@ import {
   BLOCK_START,
   BLOCK_END,
   type ShellIntegrationPlan,
+  type ShellIntegrationResult,
 } from "../../core/shell/integrate.js";
 import { describeShellProfile } from "../../core/shell/detect.js";
 import { renderTable } from "../ui/table.js";
@@ -172,6 +173,35 @@ export function renderShellProposal(plan: ShellIntegrationPlan): string {
   return lines.join("\n");
 }
 
+/**
+ * The next step after a failed shell edit, chosen by what the engine actually recovered.
+ *
+ * Separate function because each arm is a different instruction to the user, and the
+ * `failed` arm is the only place in this CLI that has to tell someone their shell startup
+ * file may be in a bad state right now. It names the path and the backup command rather than
+ * reassuring them, because that is what they need in order to fix it by hand.
+ */
+function hintForFailedShellEdit(
+  recovery: ShellIntegrationResult["recovery"],
+  profilePath: string | undefined,
+): string {
+  switch (recovery) {
+    case "restored":
+      return "Your profile was restored from the backup taken first. `nightshift backup list` shows it.";
+    case "removed":
+      return "NIGHTSHIFT created that profile and has deleted it again, so your shell is as it was.";
+    case "failed":
+      return (
+        `The undo also failed, so ${profilePath ?? "your shell profile"} may be half-edited. ` +
+        "Open it and delete anything between the `# >>> nightshift >>>` and " +
+        "`# <<< nightshift <<<` markers, or restore it with `nightshift backup list` and " +
+        "`nightshift backup restore <id>`."
+      );
+    default:
+      return "Nothing was written, so your shell profile is unchanged.";
+  }
+}
+
 /** The shared proposal-then-approve path for both writing commands. */
 async function runShellEdit(
   intent: "init" | "remove",
@@ -228,10 +258,13 @@ async function runShellEdit(
 
   const result = executeShellIntegration(plan);
   if (!result.ok) {
-    failWith(
-      result.message,
-      "Your profile was restored from the backup taken in step 1. `nightshift backup list` shows it.",
-    );
+    // The hint is chosen from what the engine actually did, not from what it was going to try.
+    // It used to be the single sentence "Your profile was restored from the backup taken in
+    // step 1", printed on every failure - including the two paths where no backup existed to
+    // restore from and the one where the restore itself failed. This is the one command whose
+    // bad day leaves someone without a working shell; a reassuring sentence that is not true
+    // is worse output than no hint at all.
+    failWith(result.message, hintForFailedShellEdit(result.recovery, plan.target?.path));
     return;
   }
 

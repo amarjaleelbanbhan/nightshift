@@ -440,6 +440,20 @@ export interface ShellIntegrationResult {
   backupId?: string | undefined;
   /** The file `backupId` snapshots, so a rollback names its own destination (#23). */
   backupPath?: string | undefined;
+  /**
+   * What actually happened to the profile after a failure, so no caller can claim an undo that
+   * did not occur. This exists because the first version of this code reported "restored it"
+   * on three paths where nothing had been restored: when the plan never ran, when the *backup*
+   * was what failed, and when the rollback itself threw and was swallowed. For the one command
+   * whose failure mode is "the user has no working shell", a comforting false claim is the
+   * worst possible output.
+   *
+   *   - `none`     nothing was written, so there is nothing to undo.
+   *   - `restored` the backup snapshot was written back over the profile.
+   *   - `removed`  the profile NIGHTSHIFT itself created was deleted.
+   *   - `failed`   recovery was attempted and failed. The profile may be half-edited.
+   */
+  recovery?: "none" | "restored" | "removed" | "failed" | undefined;
 }
 
 /**
@@ -454,7 +468,8 @@ export interface ShellIntegrationResult {
  */
 export function executeShellIntegration(plan: ShellIntegrationPlan): ShellIntegrationResult {
   if (plan.problem !== null || plan.target === null) {
-    return { ok: false, message: plan.problem ?? "No shell profile to write." };
+    // Nothing was attempted, so there is nothing to undo - and saying so is the point.
+    return { ok: false, message: plan.problem ?? "No shell profile to write.", recovery: "none" };
   }
   const profilePath = plan.target.path;
 
@@ -465,6 +480,10 @@ export function executeShellIntegration(plan: ShellIntegrationPlan): ShellIntegr
     return {
       ok: false,
       message: `Failed to create a backup before editing the shell profile: ${(error as Error).message}`,
+      // The backup is what failed, so no write was attempted and no backup exists to restore
+      // from. This path used to be reported with "your profile was restored from the backup",
+      // which named a file that had never been created.
+      recovery: "none",
     };
   }
 
@@ -486,18 +505,35 @@ export function executeShellIntegration(plan: ShellIntegrationPlan): ShellIntegr
       throw new Error("verification failed: the managed block is not present after the write");
     }
   } catch (error) {
+    // Which recovery ran is recorded, not assumed. The old code reported "and restored it"
+    // unconditionally, including when the restore below threw and was swallowed - so the one
+    // message a user reads while their shell may be broken was the one that could lie.
+    let recovery: ShellIntegrationResult["recovery"];
     try {
       if (plan.target.exists) {
         restoreBackup(backup.id, profilePath);
+        recovery = "restored";
       } else {
         fs.rmSync(profilePath, { force: true });
+        recovery = "removed";
       }
     } catch {
-      // If the rollback itself fails, the original error below is still the one to report.
+      // The original error is still the one to report, but the user has to be told that the
+      // undo did not work - this is the case where they may be left with a half-edited profile.
+      recovery = "failed";
     }
+    const outcome =
+      recovery === "restored"
+        ? "and restored it from the backup"
+        : recovery === "removed"
+          ? "and deleted the profile it had created"
+          : "AND COULD NOT UNDO THE CHANGE";
     return {
       ok: false,
-      message: `Failed to edit the shell profile and restored it: ${(error as Error).message}`,
+      message: `Failed to edit the shell profile ${outcome}: ${(error as Error).message}`,
+      backupId: backup.id,
+      backupPath: profilePath,
+      recovery,
     };
   }
 

@@ -394,9 +394,67 @@ describe("nightshift shell", () => {
     const result = executeShellIntegration(plan);
 
     expect(result.ok).toBe(false);
-    expect(result.message).toContain("restored it");
+    expect(result.message).toContain("restored it from the backup");
+    expect(result.recovery).toBe("restored");
     readFileSync.mockRestore();
     expect(fs.readFileSync(profilePath, "utf8")).toBe(original);
+  });
+
+  /**
+   * The message a user reads while their shell may be broken is the one message in this product
+   * that must not be reassuring unless it is true. The first version of this code reported
+   * "Your profile was restored from the backup taken in step 1" on every failure - including
+   * two paths where no backup existed to restore from, and one where the restore itself threw
+   * and was swallowed. These pin each outcome to what actually happened.
+   */
+  describe("what it claims about recovery", () => {
+    it("claims nothing was written when the backup itself failed", () => {
+      writeProfile("# mine\n");
+      const plan = buildShellIntegrationPlan("init");
+      // A backup that cannot be taken means no write is attempted and no snapshot exists.
+      const copyFileSync = vi.spyOn(fs, "copyFileSync").mockImplementationOnce(() => {
+        throw new Error("disk full");
+      });
+
+      const result = executeShellIntegration(plan);
+
+      copyFileSync.mockRestore();
+      expect(result.ok).toBe(false);
+      expect(result.recovery).toBe("none");
+      expect(result.message).toContain("Failed to create a backup");
+      // The bug this guards: claiming a restore from a backup that was never created.
+      expect(result.message).not.toContain("restored");
+      expect(fs.readFileSync(profilePath, "utf8")).toBe("# mine\n");
+    });
+
+    it("claims nothing was written when the plan never ran", () => {
+      fs.mkdirSync(profilePath, { recursive: true });
+      const result = executeShellIntegration(buildShellIntegrationPlan("init"));
+      expect(result.ok).toBe(false);
+      expect(result.recovery).toBe("none");
+      expect(result.message).not.toContain("restored");
+    });
+
+    it("says so loudly when the undo itself fails", () => {
+      const original = "# mine\n";
+      writeProfile(original);
+      const plan = buildShellIntegrationPlan("init");
+      // Verification fails, and then the restore fails too. The user may now have a
+      // half-edited shell profile, which is the one case that must never read as handled.
+      const readFileSync = vi.spyOn(fs, "readFileSync");
+      readFileSync.mockImplementationOnce(() => "tampered");
+      readFileSync.mockImplementationOnce(() => {
+        throw new Error("snapshot unreadable");
+      });
+
+      const result = executeShellIntegration(plan);
+
+      readFileSync.mockRestore();
+      expect(result.ok).toBe(false);
+      expect(result.recovery).toBe("failed");
+      expect(result.message).toContain("COULD NOT UNDO");
+      expect(result.message).not.toContain("restored it from the backup");
+    });
   });
 
   it("deletes a profile it created when the write cannot be verified", () => {

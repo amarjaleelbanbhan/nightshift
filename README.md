@@ -6,19 +6,17 @@ NIGHTSHIFT is an open-source developer terminal customization toolkit. It's a CL
 configuration layer for the tools you already use — Windows Terminal today, more terminals
 and shells later — not a terminal emulator or a replacement for them.
 
-This is an early (`0.4.0`) development release. It implements a real, working foundation:
-theme management (including authoring and validation) and profile management, both with safe
-apply/rollback to Windows Terminal, guided first-run setup, font detection plus a copy-only
-`font install`, and backup/restore. It does not implement the full long-term vision
-(marketplace, widgets, Studio, Claude Code integration, font *downloading*, shell
-integration) — those are tracked honestly
-below, not advertised as done. See `ROADMAP_STATUS.md` for the detailed phase-by-phase status of
-the full 1.0.0 roadmap.
-apply/rollback to Windows Terminal, guided first-run setup, read-only font detection,
-PowerShell-profile shell integration, and backup/restore. It does not implement the full
-long-term vision (marketplace, widgets, Studio, Claude Code integration, font *installation*,
-Starship *configuration*) — those are tracked honestly below, not advertised as done. See
-`ROADMAP_STATUS.md` for the detailed phase-by-phase status of the full 1.0.0 roadmap.
+This is an early (`0.4.0`) development release. It implements a real, working foundation: theme
+management (authoring, validation and editing) and profile management, both with safe
+apply/rollback to Windows Terminal; guided first-run setup; font detection plus a copy-only
+`font install`; PowerShell-profile shell integration; a read-only Claude Code appearance check;
+and backup/restore.
+
+It does not implement the full long-term vision — font *downloading*, Starship *configuration*,
+and Linux/macOS adapters are not built, and the marketplace, widget engine, visual Studio and
+ASCII Art Studio have been **decided against** rather than merely postponed. All of that is
+tracked honestly below, not advertised as done. See `ROADMAP_STATUS.md` for the phase-by-phase
+status of the full 1.0.0 roadmap.
 
 ## Status: Implemented / Partial / Planned
 

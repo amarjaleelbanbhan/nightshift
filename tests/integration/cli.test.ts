@@ -75,7 +75,6 @@ describe("CLI (built dist/index.js)", () => {
     ["profile export", ["--output <path>", "--overwrite"]],
     ["font", ["list", "check <family>", "install [options] <path>"]],
     ["font install", ["--yes"]],
-    ["font", ["list", "check <family>"]],
     ["shell", ["status", "init", "remove"]],
     ["shell init", ["--yes"]],
     ["shell remove", ["--yes"]],

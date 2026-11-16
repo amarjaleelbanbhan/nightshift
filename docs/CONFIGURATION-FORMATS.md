@@ -78,8 +78,9 @@ parts of it: the top-level `schemes` array (adds/replaces one entry by `name`) a
 `profiles.defaults.colorScheme`/`profiles.defaults.font`. Every other key is round-tripped
 unchanged. See `src/adapters/windows-terminal/apply.ts`.
 
-Two shapes of this file are **refused rather than rewritten**, because a wrong guess here
-destroys user data and declining does not:
+One shape of this file is **refused rather than rewritten**, because a wrong guess here
+destroys user data and declining does not. (There were two until #14 made a commented
+`settings.json` readable instead of refused.)
 
 - **`profiles` (or `profiles.defaults`, or `profiles.defaults.font`) is not a plain object.**
   The pre-1.0 Windows Terminal format put a JSON *array* at `profiles`. That used to be

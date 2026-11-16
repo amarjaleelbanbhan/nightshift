@@ -9,6 +9,11 @@ import { getTheme } from "../../core/themes/registry.js";
 import type { Theme } from "../../core/themes/schema.js";
 import { auditThemeContrast, WCAG_AA_BODY, WCAG_AA_LARGE } from "../../core/themes/contrast.js";
 import { findInstalledFont } from "../../core/fonts/detect.js";
+import {
+  readClaudeCodeSettings,
+  claudeThemeAppearance,
+  backgroundAppearance,
+} from "../../core/integrations/claude-code.js";
 import { EXIT_FAILURE, EXIT_CONFIG_CORRUPT } from "../errors.js";
 
 interface Check {
@@ -63,6 +68,69 @@ function activeThemeContrastCheck(configResult: ConfigReadResult): Check {
       `${failing.length} below WCAG AA ${WCAG_AA_BODY}:1 for body text ` +
       `(${failing.map((r) => `${r.role} ${r.ratio.toFixed(2)}:1`).join(", ")}; ` +
       `>=${WCAG_AA_LARGE}:1 is AA for large text) - ${summary}`,
+  };
+}
+
+/**
+ * Whether Claude Code's own light/dark setting agrees with the active theme's background (#18).
+ *
+ * This is the whole of the Claude Code integration, by decision: NIGHTSHIFT reads one key and
+ * never writes the file. The check exists because the failure is real and its cause is
+ * non-obvious - you change your *terminal* theme and a *different tool* starts rendering
+ * light-theme syntax colors on a dark background. Nothing else told the user why.
+ *
+ * `warn` throughout, never `fail`. Claude Code is an optional integration, the setting belongs
+ * to another tool, and `doctor` has to stay usable as a scripted health gate.
+ */
+function claudeCodeAppearanceCheck(
+  settingsPath: string | null,
+  configResult: ConfigReadResult,
+): Check {
+  const label = "Claude Code appearance";
+  const settings = readClaudeCodeSettings(settingsPath);
+
+  if (settings.state === "absent") {
+    return { label, status: "ok", detail: "no Claude Code settings to compare (optional)" };
+  }
+  if (settings.state === "unreadable") {
+    // Named rather than swallowed: a settings file Claude Code itself cannot read is worth
+    // knowing about, and this is the command people run when something is already wrong.
+    return {
+      label,
+      status: "warn",
+      detail: `~/.claude/settings.json could not be read - ${settings.detail}`,
+    };
+  }
+
+  const claude = claudeThemeAppearance(settings.theme);
+  if (claude === null) {
+    return {
+      label,
+      status: "ok",
+      detail: settings.theme
+        ? `Claude Code theme "${settings.theme}" is neither light nor dark - nothing to compare`
+        : "Claude Code sets no theme, so it follows its own default",
+    };
+  }
+
+  const theme = activeThemeOrReason(configResult);
+  if ("reason" in theme) return { label, status: "warn", detail: theme.reason };
+  const terminal = backgroundAppearance(theme.colors.background);
+
+  if (terminal === claude) {
+    return {
+      label,
+      status: "ok",
+      detail: `both ${claude} - Claude Code theme "${settings.theme}", ${theme.id} background ${theme.colors.background}`,
+    };
+  }
+  return {
+    label,
+    status: "warn",
+    detail:
+      `Claude Code is set to "${settings.theme}" (${claude}) but ${theme.id}'s background ` +
+      `${theme.colors.background} is ${terminal}, so Claude Code will render its ${claude} ` +
+      `syntax colors on a ${terminal} terminal. Change the theme in Claude Code to match.`,
   };
 }
 
@@ -190,6 +258,7 @@ export function runDoctor(): void {
     detail:
       caps.claudeCode.settingsPath ?? "~/.claude/settings.json not found (integration is optional)",
   });
+  checks.push(claudeCodeAppearanceCheck(caps.claudeCode.settingsPath, configResult));
 
   // Before this, the check was `isInitialized() ? "ok" : "warn"` - and `isInitialized()` is
   // only `fs.existsSync`, so a corrupt config.json exists and was reported as `✓ initialized`.

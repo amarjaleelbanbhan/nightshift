@@ -4,7 +4,24 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`doctor` reports when Claude Code's theme disagrees with your terminal's (#18).** Claude
+  Code has its own light/dark `theme` setting; when it contradicts the active NIGHTSHIFT theme's
+  background, Claude Code renders light-theme syntax colours on a dark background and nothing
+  previously told the user why — you change your *terminal* theme and a *different tool* starts
+  looking wrong. The comparison reuses the WCAG relative-luminance maths already in
+  `src/core/themes/contrast.ts` rather than adding a second notion of brightness, splitting at
+  the 0.179 midpoint where black and white text have equal contrast.
+
+  The scope is **read-only and permanently so**, recorded as a decision on #18. NIGHTSHIFT reads
+  exactly one key and never writes `~/.claude/settings.json`: writing another tool's config
+  carries the full proposal-and-approval requirement and a real blast radius, for no value
+  NIGHTSHIFT can add. The file is Zod-parsed to that single key, so `env`, `permissions` and
+  `hooks` — any of which may hold a token — are discarded at the schema boundary and cannot
+  reach a `doctor` report. A malformed or oversized file is reported as such rather than
+  crashing the one command people run when something is already wrong, and the whole check is
+  advisory: it never changes `doctor`'s exit code.
 
 ## [0.4.0] - 2026-11-15
 

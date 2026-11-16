@@ -5,10 +5,12 @@ import path from "node:path";
 import {
   validateThemeFile,
   createTheme,
+  editTheme,
   removeTheme,
   DEFAULT_BASE_THEME_ID,
 } from "../../src/core/themes/manager.js";
 import { listThemes, getTheme, userThemeFileExists } from "../../src/core/themes/registry.js";
+import { contrastRatio } from "../../src/core/themes/contrast.js";
 import { initializeConfig, writeConfig, readConfig } from "../../src/core/config/store.js";
 import { getUserThemesDir } from "../../src/core/config/paths.js";
 
@@ -225,6 +227,191 @@ describe("theme manager", () => {
       // gap today; this records where it is.
       expect(getTheme("live")?.name).toBe("Live v2");
       expect(getTheme("live")?.colors.background).toBe(getTheme("redline")?.colors.background);
+    });
+  });
+
+  describe("editTheme", () => {
+    /** Creates a user theme and returns its file path. */
+    const seed = (id: string, from = "ghost-protocol"): string => {
+      const result = createTheme({ id, name: `Theme ${id}`, from });
+      return result.path as string;
+    };
+
+    it("changes exactly the one colour, and leaves every other key and the formatting alone", () => {
+      const file = seed("editable");
+      const before = fs.readFileSync(file, "utf8");
+
+      const result = editTheme({ id: "editable", set: ["primary=#ABCDEF"] });
+
+      expect(result.ok).toBe(true);
+      expect(result.message).toBe('Updated theme "editable" (1 colour).');
+      expect(result.changes).toEqual([
+        {
+          role: "primary",
+          path: "colors.primary",
+          from: getTheme("ghost-protocol")?.colors.primary,
+          to: "#ABCDEF",
+        },
+      ]);
+
+      // The assertion that matters is the *diff*, not the field: a writer that happened to set
+      // primary correctly while reordering keys, dropping `typography` or re-indenting would
+      // still have rewritten the user's file, and a field check would pass.
+      const after = fs.readFileSync(file, "utf8");
+      const changedLines = after
+        .split("\n")
+        .filter((line, index) => line !== before.split("\n")[index]);
+      expect(changedLines).toEqual(['    "primary": "#ABCDEF",']);
+    });
+
+    it("applies several --set flags in one run, including ANSI colours", () => {
+      seed("multi");
+      const result = editTheme({
+        id: "multi",
+        set: ["background=#101010", "brightRed=#FF0000"],
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.message).toBe('Updated theme "multi" (2 colours).');
+      expect(result.changes.map((c) => c.path)).toEqual(["colors.background", "ansi.brightRed"]);
+      expect(getTheme("multi")?.colors.background).toBe("#101010");
+      expect(getTheme("multi")?.ansi.brightRed).toBe("#FF0000");
+    });
+
+    it("reports the contrast of the NEW colour, not the old one", () => {
+      seed("contrasty");
+      const background = getTheme("contrasty")?.colors.background as string;
+      const oldForeground = getTheme("contrasty")?.colors.foreground as string;
+
+      const result = editTheme({ id: "contrasty", set: ["foreground=#FFFFFF"] });
+
+      const foreground = result.contrast.find((r) => r.role === "foreground");
+      expect(foreground?.hex).toBe("#FFFFFF");
+      // Measured against the engine rather than against a hand-copied number, and pinned as
+      // *different* from the old value's ratio, which is the mistake being guarded: a report
+      // built before the change would have been internally consistent and wrong.
+      expect(foreground?.ratio).toBe(Math.round(contrastRatio("#FFFFFF", background) * 100) / 100);
+      expect(foreground?.ratio).not.toBe(
+        Math.round(contrastRatio(oldForeground, background) * 100) / 100,
+      );
+    });
+
+    it("writes a dim theme and reports the failing ratio instead of refusing it", () => {
+      seed("dim");
+      const result = editTheme({ id: "dim", set: ["primary=#111111"] });
+
+      // The same rule `theme validate` follows: contrast is advisory everywhere. A theme the
+      // user deliberately made dim is still their theme.
+      expect(result.ok).toBe(true);
+      expect(result.contrast.find((r) => r.role === "primary")?.passesBody).toBe(false);
+      expect(getTheme("dim")?.colors.primary).toBe("#111111");
+    });
+
+    it("refuses an invalid hex with the field path `theme validate` reports, and writes nothing", () => {
+      const file = seed("badhex");
+      const before = fs.readFileSync(file, "utf8");
+
+      const result = editTheme({ id: "badhex", set: ["primary=blue"] });
+
+      expect(result.ok).toBe(false);
+      expect(result.issues).toEqual([
+        { path: "colors.primary", message: "must be a 6-digit hex color, e.g. #1A2B3C" },
+      ]);
+      expect(fs.readFileSync(file, "utf8")).toBe(before);
+    });
+
+    it("refuses a three-digit hex, which the contrast engine accepts but the schema does not", () => {
+      // `parseHex` in contrast.ts handles `#abc`, so this is the one invalid value that would
+      // produce a plausible-looking contrast report if the schema check were skipped.
+      seed("shorthex");
+      const result = editTheme({ id: "shorthex", set: ["primary=#abc"] });
+      expect(result.ok).toBe(false);
+      expect(result.issues.map((i) => i.path)).toEqual(["colors.primary"]);
+      expect(getTheme("shorthex")?.colors.primary).not.toBe("#abc");
+    });
+
+    it("refuses an unknown role, naming the roles that do exist", () => {
+      const file = seed("roles");
+      const before = fs.readFileSync(file, "utf8");
+
+      const result = editTheme({ id: "roles", set: ["selectionBackground=#123456"] });
+
+      expect(result.ok).toBe(false);
+      expect(result.message).toContain('"selectionBackground" is not a colour role');
+      // The remedy is in the message because the valid names are the whole answer.
+      expect(result.message).toContain("selection");
+      expect(result.message).toContain("brightWhite");
+      expect(fs.readFileSync(file, "utf8")).toBe(before);
+    });
+
+    it("refuses a --set without an `=`, and a run with no --set at all", () => {
+      seed("malformed");
+      expect(editTheme({ id: "malformed", set: ["primary"] }).message).toContain(
+        "is not a role=value pair",
+      );
+      expect(editTheme({ id: "malformed", set: [] }).message).toContain("No colour given");
+    });
+
+    it("never edits a built-in theme, and suggests nothing a flag could lift", () => {
+      const result = editTheme({ id: "monolith", set: ["primary=#ABCDEF"] });
+
+      expect(result.ok).toBe(false);
+      expect(result.message).toBe('"monolith" is a built-in theme and cannot be edited in place.');
+      // Not shadowed by a user file either - the refusal happens before any path is built, so
+      // there is nothing to clean up and nothing for `theme list` to show twice.
+      expect(fs.existsSync(path.join(getUserThemesDir(), "monolith.json"))).toBe(false);
+      expect(getTheme("monolith")?.colors.primary).not.toBe("#ABCDEF");
+    });
+
+    it("refuses a malformed id before it can become a path, and an unknown id", () => {
+      expect(editTheme({ id: "../../evil", set: ["primary=#ABCDEF"] }).message).toContain(
+        "is not a valid theme id",
+      );
+      expect(editTheme({ id: "never-existed", set: ["primary=#ABCDEF"] }).message).toContain(
+        'No user theme found with id "never-existed"',
+      );
+    });
+
+    it("refuses a file that exists but does not validate, rather than editing one key of it", () => {
+      // The hand-edited-into-invalidity file is exactly the case this command exists to spare
+      // people, so it must not be made worse by a partial write on top.
+      fs.mkdirSync(getUserThemesDir(), { recursive: true });
+      const file = path.join(getUserThemesDir(), "broken.json");
+      fs.writeFileSync(file, JSON.stringify({ ...VALID, id: "broken", ansi: {} }));
+
+      const result = editTheme({ id: "broken", set: ["primary=#ABCDEF"] });
+      expect(result.ok).toBe(false);
+      expect(result.message).toContain("exists but is not a valid theme");
+      expect(JSON.parse(fs.readFileSync(file, "utf8")).colors.primary).toBe(VALID.colors.primary);
+    });
+
+    describe("--dry-run", () => {
+      it("reports the change and the new contrast, and writes nothing", () => {
+        const file = seed("previewed");
+        const before = fs.readFileSync(file, "utf8");
+
+        const result = editTheme({
+          id: "previewed",
+          set: ["primary=#ABCDEF"],
+          dryRun: true,
+        });
+
+        expect(result.ok).toBe(true);
+        expect(result.message).toBe('Editing "previewed" would change 1 colour.');
+        expect(result.changes[0]?.to).toBe("#ABCDEF");
+        expect(result.contrast.find((r) => r.role === "primary")?.hex).toBe("#ABCDEF");
+        // Byte equality rather than a field check, for the same reason as the write test: a dry
+        // run that reformatted the file would have written.
+        expect(fs.readFileSync(file, "utf8")).toBe(before);
+      });
+
+      it("refuses what the real run refuses, so it is a genuine pre-flight check", () => {
+        seed("preflight");
+        expect(editTheme({ id: "preflight", set: ["primary=nope"], dryRun: true }).ok).toBe(false);
+        expect(editTheme({ id: "monolith", set: ["primary=#ABCDEF"], dryRun: true }).ok).toBe(
+          false,
+        );
+      });
     });
   });
 

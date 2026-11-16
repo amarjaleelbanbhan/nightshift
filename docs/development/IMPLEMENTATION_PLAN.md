@@ -3,8 +3,29 @@
 Owner: `planner-architect` (see `.claude/agents/planner-architect.md`)
 Branch: `feat/nightshift-1.0.0`
 Created: 2026-11-15
-Status: **live** — updated as tasks complete. Nothing is marked Done without a recorded test
-result.
+
+> ## ⚠ The Status column in the tables below is STALE. Do not read it as truth.
+>
+> This document was written as a live tracker and then stopped being updated, so most rows
+> still read `Not started` for work that has since shipped and is covered by tests — Waves 6
+> to 14 in particular. An independent review (#11) flagged this, and it is recorded here
+> rather than quietly corrected, because the rows were never re-verified one by one and
+> back-filling a hundred `Done` marks from memory would replace a *visibly* stale document
+> with a *plausibly* wrong one. That is the worse failure for a project whose rule is that
+> nothing is claimed without evidence.
+>
+> **Where status actually lives:**
+>
+> | Question | Authoritative source |
+> |---|---|
+> | Is roadmap phase N done? | `ROADMAP_STATUS.md` |
+> | What shipped in which release? | `CHANGELOG.md` |
+> | What is still open, and why? | the GitHub issue tracker |
+> | Does the suite pass, and how big is it? | `npm test` — run it |
+>
+> What this document is still good for: the **task decomposition, the dependency ordering
+> between work packages, and the acceptance criteria** in each row. Those were reasoned about
+> carefully and have not rotted. Only the Status column has.
 
 > This document complements, not replaces, `ROADMAP_STATUS.md`. `ROADMAP_STATUS.md` is the
 > phase truth table for the 1.0.0 product roadmap. This document is the engineering execution

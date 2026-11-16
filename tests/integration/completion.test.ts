@@ -101,6 +101,9 @@ describe("nightshift completion powershell", () => {
     expect(values.get("theme apply")).toBe("theme");
     expect(values.get("theme preview")).toBe("theme");
     expect(values.get("theme remove")).toBe("theme");
+    // `theme edit <id>` completes theme ids with no completion change at all: the mapping is
+    // derived from the argument's name, so a new `theme <verb> <id>` is covered by construction.
+    expect(values.get("theme edit")).toBe("theme");
     expect(values.get("profile apply")).toBe("profile");
     expect(values.get("profile show")).toBe("profile");
     expect(values.get("profile export")).toBe("profile");
@@ -108,7 +111,15 @@ describe("nightshift completion powershell", () => {
     expect(values.get("theme validate")).toBe("");
     expect(values.get("profile import")).toBe("");
     expect(values.get("font check")).toBe("");
+    // `font install <path>` takes a filesystem path, not an id from a registry, so it gets no
+    // completion values - the same answer `theme validate <file>` gets, for the same reason.
+    expect(values.get("font install")).toBe("");
     expect(values.get("theme list")).toBe("");
+    // `shell init`/`shell remove` take no positional argument at all, so there is nothing for
+    // completion to offer beyond their options - and nothing is offered.
+    expect(values.get("shell init")).toBe("");
+    expect(values.get("shell remove")).toBe("");
+    expect(values.get("shell status")).toBe("");
     // Every command in the tree is in the table, including the root.
     expect(values.has("")).toBe(true);
   });

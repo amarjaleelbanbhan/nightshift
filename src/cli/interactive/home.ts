@@ -15,6 +15,7 @@ import {
   runThemeApply,
   runThemeValidate,
   runThemeCreate,
+  runThemeEdit,
   runThemeRemove,
 } from "../commands/theme.js";
 import { runSetup } from "../commands/setup.js";
@@ -26,7 +27,8 @@ import {
 } from "../commands/profile.js";
 import { runProfileList } from "../commands/profile.js";
 import { runDoctor } from "../commands/doctor.js";
-import { runFontList, runFontCheck } from "../commands/font.js";
+import { runFontList, runFontCheck, runFontInstall } from "../commands/font.js";
+import { runShellStatus, runShellInit, runShellRemove } from "../commands/shell.js";
 import { runBackupCreate, runBackupList } from "../commands/backup.js";
 import { runStatus } from "../commands/status.js";
 
@@ -59,7 +61,7 @@ export async function runInteractiveHome(): Promise<void> {
       {
         label: "Customization",
         value: "customization",
-        hint: "themes, profiles, ASCII art, widgets",
+        hint: "themes and profiles",
       },
       { label: "Integrations", value: "integrations", hint: "terminal, shell, Claude Code" },
       { label: "System", value: "system", hint: "setup, fonts, backups, settings" },
@@ -101,14 +103,17 @@ async function runCustomizationMenu(): Promise<void> {
   const choice = await promptSelect("Customization", [
     { label: "Theme Studio", value: "theme" },
     { label: "Profile Manager", value: "profile" },
-    { label: "ASCII Art Studio", value: "ascii", hint: "planned" },
-    { label: "Widgets", value: "widgets", hint: "planned" },
     { label: "Back", value: "back" },
   ]);
   if (!choice || choice === "back") return;
+  // ASCII Art Studio and Widgets used to sit here labelled `planned`. Both are now closed as
+  // not planned - #22 because `src/banners/startup.ts` already documents why this product
+  // deliberately does not render letter art, and #17 because a widget engine has no render
+  // surface here (no daemon is permitted, Windows Terminal exposes no panel, and `status` and
+  // `doctor` already are the dashboard). A menu entry for a feature nobody intends to build is
+  // a promise, so it goes with the decision rather than lingering as an honest-looking label.
   if (choice === "theme") await runThemeMenu();
   if (choice === "profile") await runProfileMenu();
-  if (choice === "ascii" || choice === "widgets") log.warn(PLANNED);
 }
 
 async function runIntegrationsMenu(): Promise<void> {
@@ -118,18 +123,51 @@ async function runIntegrationsMenu(): Promise<void> {
       value: "terminal",
       hint: "planned — use Theme Studio to apply colors today",
     },
-    { label: "Shell Manager", value: "shell", hint: "planned" },
+    { label: "Shell Manager", value: "shell", hint: "PowerShell profile, Starship init" },
     { label: "Claude Code", value: "claude", hint: "planned" },
     { label: "Back", value: "back" },
   ]);
   if (!choice || choice === "back") return;
+  if (choice === "shell") {
+    await runShellMenu();
+    return;
+  }
   log.warn(PLANNED);
+}
+
+/**
+ * Editing a shell startup file is the highest blast radius in the product, so this entry hands
+ * straight to `runShellInit`/`runShellRemove`, which print the exact diff and ask for approval
+ * themselves - the menu must not become a second approval flow, and the hints name what the
+ * integration does not do (generate a starship.toml).
+ */
+async function runShellMenu(): Promise<void> {
+  const action = await promptSelect("Shell Manager", [
+    { label: "Status", value: "status", hint: "shell, profile path, Starship" },
+    {
+      label: "Add or update NIGHTSHIFT's block",
+      value: "init",
+      hint: "shows the exact diff first; no starship.toml is written",
+    },
+    { label: "Remove NIGHTSHIFT's block", value: "remove" },
+    { label: "Back", value: "back" },
+  ]);
+  if (!action || action === "back") return;
+  if (action === "status") {
+    runShellStatus();
+    return;
+  }
+  if (action === "init") {
+    await runShellInit();
+    return;
+  }
+  await runShellRemove();
 }
 
 async function runSystemMenu(): Promise<void> {
   const choice = await promptSelect("System", [
     { label: "Setup", value: "setup", hint: "first-run configuration" },
-    { label: "Fonts", value: "fonts", hint: "detect installed fonts (installing: not yet)" },
+    { label: "Fonts", value: "fonts", hint: "detect and install fonts" },
     { label: "Backups", value: "backups" },
     { label: "Settings", value: "settings" },
     { label: "Back", value: "back" },
@@ -142,16 +180,20 @@ async function runSystemMenu(): Promise<void> {
 }
 
 /**
- * Detection is real; installation is not. Installing a font writes outside NIGHTSHIFT's own
- * config directory, so it needs the same shown-proposal-and-approval flow `setup` has - it is
- * tracked separately and stays labelled here rather than being hidden, so the menu never implies
- * a capability that does not exist.
+ * Installing a font writes outside NIGHTSHIFT's own config directory, so this entry hands
+ * straight to `runFontInstall`, which prints the proposal and asks for approval itself - the
+ * menu must not become a second approval flow, and the hint names the one thing the install
+ * cannot finish (the registry value).
  */
 async function runFontsMenu(): Promise<void> {
   const action = await promptSelect("Fonts", [
     { label: "List installed fonts", value: "list" },
     { label: "Check a specific family", value: "check", hint: "e.g. the font your theme asks for" },
-    { label: "Install a font", value: "install", hint: "not implemented" },
+    {
+      label: "Install a font",
+      value: "install",
+      hint: "from a local file; copy only, no registry",
+    },
     { label: "Back", value: "back" },
   ]);
   if (!action || action === "back") return;
@@ -166,11 +208,9 @@ async function runFontsMenu(): Promise<void> {
     runFontCheck(family);
     return;
   }
-  log.warn(
-    "Font installation is not implemented. It writes outside NIGHTSHIFT's config directory, so " +
-      "it needs an explicit proposal-and-approval flow first. Install fonts with Windows' own " +
-      "font installer for now, then run `nightshift font check <family>` to confirm.",
-  );
+  const source = await promptText("Path to the font file or directory to install:");
+  if (!source) return;
+  await runFontInstall(source);
 }
 
 function runSettings(): void {
@@ -200,6 +240,7 @@ async function runThemeMenu(): Promise<void> {
     { label: "Apply a theme", value: "apply" },
     { label: "Validate a theme file", value: "validate" },
     { label: "Create a new theme", value: "create" },
+    { label: "Edit a theme", value: "edit", hint: "change a colour" },
     { label: "Remove a user theme", value: "remove" },
     { label: "Back", value: "back" },
   ]);
@@ -227,6 +268,50 @@ async function runThemeMenu(): Promise<void> {
     );
     if (!from) return;
     runThemeCreate({ id, name, from });
+    return;
+  }
+
+  // A wrapper over `theme edit --set`, not a second implementation: it collects one
+  // `role=value` pair and hands it to the same function the flag does, so the refusals, the
+  // schema check and the contrast report are identical either way. Only user themes are offered
+  // because a built-in cannot be edited in place; the refusal and its clone suggestion still
+  // exist for `theme edit <builtin-id>` on the command line.
+  if (action === "edit") {
+    const userThemes = listThemes().filter((e) => e.source === "user");
+    if (userThemes.length === 0) {
+      log.info(
+        "No user themes to edit yet. Built-in themes cannot be edited in place - create your " +
+          "own copy first with `Create a new theme` (or `nightshift theme create --from <id>`), " +
+          "then edit that.",
+      );
+      return;
+    }
+    const editId = await promptSelect(
+      "Edit which theme?",
+      userThemes.map(({ theme }) => ({ label: theme.name, value: theme.id })),
+    );
+    if (!editId) return;
+    const theme = userThemes.find((e) => e.theme.id === editId)?.theme;
+    if (!theme) return;
+
+    // Every role with its current value, so the role never has to be spelled from memory -
+    // which is the specific thing hand-editing the JSON gets wrong.
+    const role = await promptSelect("Change which colour?", [
+      ...Object.entries(theme.colors).map(([name, hex]) => ({
+        label: name,
+        value: name,
+        hint: hex,
+      })),
+      ...Object.entries(theme.ansi).map(([name, hex]) => ({
+        label: `ansi ${name}`,
+        value: name,
+        hint: hex,
+      })),
+    ]);
+    if (!role) return;
+    const value = await promptText(`New hex value for ${role}:`, "#1A2B3C");
+    if (!value) return;
+    runThemeEdit(editId, { set: [`${role}=${value}`] });
     return;
   }
 

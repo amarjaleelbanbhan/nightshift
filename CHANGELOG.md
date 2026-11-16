@@ -4,7 +4,142 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`doctor` reports when Claude Code's theme disagrees with your terminal's (#18).** Claude
+  Code has its own light/dark `theme` setting; when it contradicts the active NIGHTSHIFT theme's
+  background, Claude Code renders light-theme syntax colours on a dark background and nothing
+  previously told the user why — you change your *terminal* theme and a *different tool* starts
+  looking wrong. The comparison reuses the WCAG relative-luminance maths already in
+  `src/core/themes/contrast.ts` rather than adding a second notion of brightness, splitting at
+  the 0.179 midpoint where black and white text have equal contrast.
+
+  The scope is **read-only and permanently so**, recorded as a decision on #18. NIGHTSHIFT reads
+  exactly one key and never writes `~/.claude/settings.json`: writing another tool's config
+  carries the full proposal-and-approval requirement and a real blast radius, for no value
+  NIGHTSHIFT can add. The file is Zod-parsed to that single key, so `env`, `permissions` and
+  `hooks` — any of which may hold a token — are discarded at the schema boundary and cannot
+  reach a `doctor` report. A malformed or oversized file is reported as such rather than
+  crashing the one command people run when something is already wrong, and the whole check is
+  advisory: it never changes `doctor`'s exit code.
+- `nightshift font install <path> [--yes]` — the write half of font support, and the first thing
+  that lets a theme's requested font actually be obtained rather than only diagnosed. It copies
+  a local `.ttf`/`.otf`/`.ttc` file, or every font file in a directory, into
+  `%LOCALAPPDATA%\Microsoft\Windows\Fonts`.
+
+  It reuses `setup`'s proposal-then-approve structure rather than inventing a second one:
+  `buildFontInstallPlan` and `renderFontInstallProposal` perform no writes at all, so the
+  non-interactive path is *structurally* unable to touch the font directory. Without a TTY it
+  prints the proposal and writes nothing; `--yes` is the only way to approve without a prompt.
+  After the copy it re-runs the existing detector (`findInstalledFont`) and reports a family it
+  cannot find as a failure, instead of assuming the copy was enough.
+
+  **It does not register the font with Windows.** A per-user install is a file copy *and* a
+  value under `HKCU\Software\Microsoft\Windows NT\CurrentVersion\Fonts`; the registry needs
+  `reg.exe` or a Win32 call, and `src/` contains no child-process execution and gains no
+  dependency for one write. So the proposal says registration will not happen *before* you
+  approve it, the result says it again afterwards, and the exact `reg add` command to finish is
+  printed. Nothing claims the install is complete when it is not.
+
+  **It never downloads.** Fetching a font would be this project's first network operation and a
+  threat-model change; the path is local-only. The argument is untrusted input: `.ttf`/`.otf`/
+  `.ttc` only, 32 MB per file, 256 files per directory install, `..` segments and symlinked
+  sources refused, destinations resolved with `resolveSafePath` under the font directory and
+  symlink-checked, and a file whose sfnt `name` table yields no family refused rather than
+  copied — an install that could not be verified is one this command must not report as done.
+
+- The interactive **Fonts** menu's "Install a font" entry is now real, and hands straight to the
+  same approval flow rather than becoming a second one.
+
+### Changed
+
+- `atomicWriteFileSync` accepts a `Buffer` as well as a string, so the font copy gets the same
+  crash-safety guarantee as every other write instead of a second write path.
+- `font check`'s failure hint now points at `font install <path>` instead of telling the user
+  NIGHTSHIFT cannot install fonts.
+- **`nightshift theme edit <id> --set <role>=<#RRGGBB>` (#40)** — change a theme's colour without
+  opening the JSON. `--set` is repeatable and accepts any of the 9 `colors` roles or the 16
+  `ansi` ones. Also an **Edit a theme** action in the interactive Theme Studio menu, which lists
+  every role with its current value so nothing has to be spelled from memory.
+
+  **The new WCAG contrast ratios are printed before the write**, not after, so a change that
+  makes text unreadable is visible at the moment it is made rather than discovered once it is
+  applied to the terminal. Contrast stays advisory, exactly as in `theme validate` — a dim theme
+  is still a valid theme, so a failing ratio is shown and the write still happens.
+
+  `--dry-run` prints the before/after and the new ratios and writes nothing. An invalid hex is
+  refused with the same field path `theme validate` reports (`colors.primary: must be a 6-digit
+  hex color`), because it is literally the same schema — not a second opinion phrased
+  differently. An unknown role is refused with the full list of valid roles. A built-in theme
+  can never be edited in place under any flag; the refusal prints the `theme create --from`
+  command to clone it first.
+
+  The write is `createTheme`'s write — same safe-path resolution, same symlink guard, same
+  atomic write — so the codebase still has exactly one theme writer. A verified edit changes
+  only the lines for the roles named and leaves key order, formatting and every non-colour key
+  untouched.
+
+  This closes the gap that **#20 (NIGHTSHIFT Studio)** was reaching for. That issue was closed
+  rather than built: a local visual editor meant a second toolchain and a localhost HTTP server,
+  which would have broken the load-bearing claim in `docs/SECURITY-MODEL.md` that there is no
+  network call anywhere in `src/`, and replaced the shown-proposal consent flow with a browser
+  click. The actual user value — change a colour, see whether it is still readable — needed no
+  server.
+- `nightshift shell status`, `nightshift shell init [--yes]` and `nightshift shell remove
+  [--yes]` — shell integration for PowerShell, and the first thing NIGHTSHIFT writes into a
+  file that the user's shell *executes*. `shell init` manages one clearly delimited block in
+  `$PROFILE`, between `# >>> nightshift >>>` and `# <<< nightshift <<<`, containing
+  `$env:NIGHTSHIFT_THEME` and — only when the `starship` binary is on PATH — a guarded Starship
+  init line.
+
+  This is the highest blast radius change in the product: a corrupt `settings.json` costs a
+  user their terminal colours, a corrupt `$PROFILE` can cost them the shell they would use to
+  fix it. So it reuses `setup`'s and `font install`'s proposal-then-approve structure rather
+  than inventing a third one — `buildShellIntegrationPlan` and `renderShellProposal` perform no
+  writes at all, so the non-interactive path is *structurally* unable to touch the file — and
+  adds the one thing those two did not need: **the exact diff**, every added and removed line
+  marked, with the unchanged lines around the block shown too, because the consent being asked
+  for is consent to specific lines of shell source. Without a TTY it prints the diff and writes
+  nothing; `--yes` is the only non-interactive approval. The file is backed up through the
+  existing engine in `src/backup/manager.ts` first, and a write that cannot be verified
+  afterwards is rolled back — from the snapshot when the profile existed, and by deleting the
+  file when NIGHTSHIFT created it, since there is no snapshot of a file that was not there.
+
+  The managed block is **idempotent and exactly removable**: the next content is computed as
+  `before + block + after` from verbatim slices of the current file, so re-running replaces the
+  block's contents instead of appending a second one (asserted by running the command twice and
+  comparing bytes), `shell remove` deletes exactly that region and leaves the user's own
+  content and comments byte for byte as they were, and the file's own line endings are
+  preserved. A file with two blocks or an unterminated one is refused rather than repaired.
+
+  Handled explicitly, not assumed: a startup file that does not exist (created, with its parent
+  directory), one that is empty, one that is a symlink (followed, as `theme apply` does for a
+  symlinked `settings.json` — #27), one that already holds an older version's block, and a
+  `Documents` folder redirected by OneDrive's Known Folder Move (verified on a real machine
+  where it is).
+
+  **It does not configure Starship.** Starship is *detected* — the binary by scanning PATH with
+  `fs`, the config by looking for `starship.toml` — and reported. Generating a `starship.toml`
+  from a NIGHTSHIFT theme is not implemented, and both the proposal (before approval) and
+  `shell status` say so. **It writes PowerShell profiles only**; a detected bash or zsh is
+  reported and never edited, the same deliberate scope the completion script has (#19).
+
+  Nothing is executed to achieve any of this: there is still no child-process execution
+  anywhere in `src/`. Asking PowerShell for `$PROFILE` and running `starship --version` are
+  both replaced by filesystem evidence, and `shell status` prints the evidence it used so the
+  user can disagree with it.
+
+- The interactive **Shell Manager** menu entry is now real instead of `planned`, and hands
+  straight to the same approval flow rather than becoming a second one.
+
+### Security
+
+- `MAX_SHELL_PROFILE_BYTES` (1 MB) in `src/security/limits.ts` caps the startup file NIGHTSHIFT
+  will read and splice, checked with `stat` before the read.
+- NIGHTSHIFT's own `activeThemeId` is re-validated against `[a-z0-9-]+` before it is
+  interpolated into the managed block, and a value that fails is refused rather than escaped.
+  `config.json` is hand-editable and the block is PowerShell source the shell runs on every
+  start, so "the theme schema validates it" is not a property of the file on disk.
 
 ## [0.4.0] - 2026-11-15
 

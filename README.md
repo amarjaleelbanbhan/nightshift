@@ -8,11 +8,17 @@ and shells later — not a terminal emulator or a replacement for them.
 
 This is an early (`0.4.0`) development release. It implements a real, working foundation:
 theme management (including authoring and validation) and profile management, both with safe
-apply/rollback to Windows Terminal, guided first-run setup, read-only font detection, and
-backup/restore. It does not implement the full long-term vision (marketplace, widgets, Studio,
-Claude Code integration, font *installation*, shell integration) — those are tracked honestly
+apply/rollback to Windows Terminal, guided first-run setup, font detection plus a copy-only
+`font install`, and backup/restore. It does not implement the full long-term vision
+(marketplace, widgets, Studio, Claude Code integration, font *downloading*, shell
+integration) — those are tracked honestly
 below, not advertised as done. See `ROADMAP_STATUS.md` for the detailed phase-by-phase status of
 the full 1.0.0 roadmap.
+apply/rollback to Windows Terminal, guided first-run setup, read-only font detection,
+PowerShell-profile shell integration, and backup/restore. It does not implement the full
+long-term vision (marketplace, widgets, Studio, Claude Code integration, font *installation*,
+Starship *configuration*) — those are tracked honestly below, not advertised as done. See
+`ROADMAP_STATUS.md` for the detailed phase-by-phase status of the full 1.0.0 roadmap.
 
 ## Status: Implemented / Partial / Planned
 
@@ -28,9 +34,16 @@ the full 1.0.0 roadmap.
   and a UTF-8 BOM all survive the write, and re-applying the same theme leaves the file
   byte-identical. Most theme switchers regenerate the file and quietly drop all of that.
 - Theme authoring: `theme validate` (reports *every* schema problem at once with its field
-  path), `theme create` (clones an existing theme into your user themes directory), and
-  `theme remove`. A built-in theme id can never be overwritten or removed, with or without
-  `--overwrite`.
+  path), `theme create` (clones an existing theme into your user themes directory),
+  `theme edit` and `theme remove`. A built-in theme id can never be overwritten, edited in
+  place or removed, with or without `--overwrite`.
+- `theme edit <id> --set <role>=<#RRGGBB>`: change a colour without opening the JSON, with the
+  new WCAG contrast ratios shown *before* the write — so a change that makes text unreadable is
+  visible at the moment it is made, rather than after you have applied it. `--set` is
+  repeatable, every value goes through the same schema that backs `theme validate` (an invalid
+  hex is refused with the same field path), and `--dry-run` prints the before/after and the new
+  ratios without writing. Also available as **Edit a theme** in the interactive Theme Studio
+  menu, which lists every role with its current value so nothing has to be spelled from memory.
 - `setup`: guided first run. It prints the exact proposal — every path it would create, the
   backup it would take, the theme it would apply — and writes nothing until you approve it. In
   a non-interactive environment (CI, a pipe, redirected output) it prints the proposal and
@@ -43,6 +56,24 @@ the full 1.0.0 roadmap.
   *active theme's* requested font is actually installed. That check exists because Windows
   Terminal silently substitutes a different font when the requested family is missing, and
   `theme apply` used to print success without mentioning it.
+- `font install <path> [--yes]`: copies a local `.ttf`/`.otf`/`.ttc` file, or every font file in
+  a directory, into your per-user font directory. It uses the same proposal-then-approve
+  structure as `setup` — it prints every file it would write and writes nothing until you
+  approve; without a TTY it prints the proposal and writes nothing, and `--yes` is the only way
+  to approve without a prompt. It then re-runs detection to confirm the family is really there.
+  **It does not create the registry value Windows uses to enumerate fonts**, and says so both
+  in the proposal and after the copy, with the exact `reg add` command to finish the job. It
+  never downloads anything (see "Known limitations").
+- Shell integration: `shell status`, `shell init` and `shell remove` manage one clearly
+  delimited block in your PowerShell profile (`$PROFILE`), between `# >>> nightshift >>>` and
+  `# <<< nightshift <<<`. Because this edits a file your shell *executes* on every start — the
+  highest blast radius in this tool — `shell init` prints **the exact diff, line by line**,
+  backs the file up first, and writes nothing until you approve it; non-interactively it prints
+  the diff and writes nothing, and `--yes` is the only way to approve without a prompt.
+  Re-running replaces the block's contents rather than appending a second one (the file comes
+  out byte-identical), and `shell remove` deletes exactly that block, leaving the rest of your
+  profile — including your own comments — byte for byte as it was. A symlinked `$PROFILE` is
+  followed, not replaced. **It does not write a `starship.toml`** (see "Partially implemented").
 - PowerShell Tab completion (`completion powershell`), completing commands, options and -
   the part that matters - theme, profile and backup ids read from the live registries.
 - A documented exit-code contract (see "Exit codes" below) and `--no-color` / `NO_COLOR`
@@ -55,30 +86,70 @@ the full 1.0.0 roadmap.
 - Environment/capability detection (`doctor`, `status`) — reports what was actually detected,
   not what's assumed, and now also reports active profile and user-profile-directory health.
 - Interactive home menu (`nightshift` with no args), grouped into Workspace / Customization /
-  Integrations / System, with unimplemented sections clearly labeled instead of faked — Setup
-  and Fonts are now real entries there, ASCII Art Studio, Widgets, Shell Manager and Claude
-  Code are still marked `planned`. Built on `@clack/prompts`; falls back to printing status and
-  exiting if run without a real terminal (CI, pipes) instead of hanging.
+  Integrations / System, with unimplemented sections clearly labeled instead of faked — Setup,
+  Fonts and Shell Manager are now real entries there; Terminal Manager and Claude Code are
+  still marked `planned`. ASCII Art Studio and Widgets were removed rather than relabelled,
+  because both are closed as not planned (#22, #17) and a `planned` label for something nobody
+  intends to build is a promise. Built on `@clack/prompts`; falls back to
+  printing status and exiting if run without a real terminal (CI, pipes) instead of hanging.
 - One-shot commands (`status`, `doctor`, `theme list`, `profile list`, `font list`,
   `backup list`) render through a shared, terminal-width-aware table/panel design system
   (`cli-table3` + `boxen`) instead of hand-built padded strings.
 
 **Partially implemented**
 
-- Claude Code integration: detection only (`doctor` reports whether `~/.claude/settings.json`
-  exists). No settings are read or written.
-- Font management: detection only. NIGHTSHIFT reads the installed font families out of Windows'
-  font directories and can tell you whether a family is present; it does **not** install,
-  download or remove fonts. Nerd Font flagging is a name-based heuristic (see "Known
-  limitations"). Non-Windows platforms report `unsupported` rather than guessing.
+- Claude Code integration: **read-only, and permanently so by decision** (#18). `doctor` reports
+  whether `~/.claude/settings.json` exists, and compares Claude Code's own light/dark `theme`
+  setting against the active theme's background luminance — because when those disagree, Claude
+  Code renders light-theme syntax colours on a dark terminal and nothing else tells you why.
+  NIGHTSHIFT reads exactly one key (`theme`) and **never writes the file**. The file can hold
+  `env`, `permissions` and `hooks`, any of which may contain a token, so everything else is
+  discarded at the schema boundary rather than risked in a `doctor` report you might paste into
+  a bug thread.
+- Font management: detection, plus a **copy-only** install. NIGHTSHIFT reads the installed font
+  families out of Windows' font directories, tells you whether a family is present, and can copy
+  a font file you already have into your per-user font directory — but it does not write the
+  font registry key, does not download fonts, and does not remove them. Nerd Font flagging is a
+  name-based heuristic (see "Known limitations"). Non-Windows platforms report `unsupported`
+  rather than guessing.
+- Shell and Starship integration: the **shell-profile half is done** (see "Implemented"); the
+  **Starship half is detection only**. NIGHTSHIFT looks for the `starship` binary on your PATH
+  (with `fs`, never by running it) and for a `starship.toml`, reports both, and — when the
+  binary is there — adds a guarded Starship init line to its managed block. It does **not**
+  generate, edit or read a `starship.toml`, so your prompt's appearance still comes entirely
+  from your own Starship config. PowerShell (both 5.1 and 7+) is the only shell written to; a
+  detected bash or zsh is reported and never edited.
 
 **Planned (not implemented — do not expect these to work)**
 
-- Font installation (downloading and installing a font for you).
-- NIGHTSHIFT Studio (visual editor).
-- Marketplace / community registry.
-- Widget system, ASCII Art Studio, shell prompt adapters (Starship integration).
-- Linux/macOS terminal adapters (Ghostty, Kitty, iTerm2, GNOME Terminal).
+- Downloading a font for you. `font install` takes a local path; there is no network operation
+  anywhere in NIGHTSHIFT.
+- Registering an installed font with Windows (the `HKCU\...\Fonts` registry value). `font
+  install` copies the file and prints the `reg add` command you need to finish.
+- Generating a `starship.toml` from a NIGHTSHIFT theme. `shell init` initialises Starship if you
+  have it; it never writes its config.
+- Editing `.bashrc`, `.zshrc` or any non-PowerShell startup file.
+- Linux/macOS terminal adapters (Ghostty, Kitty, iTerm2, GNOME Terminal) — deferred, with the
+  unblock conditions recorded on #19. They are buildable but not verifiable on Windows-only CI,
+  and this project does not claim support it has not exercised.
+
+**Not planned — decided against, not forgotten**
+
+These were on the roadmap and were closed deliberately. Each issue carries the full reasoning.
+
+- A visual editor / "NIGHTSHIFT Studio" (#20) — it needs a localhost HTTP server, which breaks
+  the no-network property the security model rests on, and a browser click is a weaker consent
+  signal than the proposal flow. `theme edit` delivers the actual value: change a colour from
+  the CLI or the interactive menu, with the new contrast ratios shown before the write.
+- Marketplace / community registry (#21) — it would add this project's first network egress, put
+  remote content into the one path that writes a file we do not own, and commit a single
+  maintainer to indefinite submission review and takedowns. A theme is one JSON file; share it
+  by gist or PR and check it with `theme validate`.
+- Widget engine (#17) — no render surface. No daemon is permitted, Windows Terminal exposes no
+  panel, and `status` and `doctor` already are the dashboard.
+- ASCII Art Studio (#22) — contradicts the product's own visual direction, which
+  `src/banners/startup.ts` has documented in shipped code since Phase 1 removed the ASCII
+  wordmark.
 
 ## Requirements
 
@@ -89,7 +160,17 @@ the full 1.0.0 roadmap.
 
 ## Installation
 
-Not yet published to npm. Run from source:
+Not yet published. When it is, the package will be **`nightshift-terminal`** and the command
+will still be `nightshift`:
+
+```bash
+npm install -g nightshift-terminal
+```
+
+> The obvious name, `nightshift-cli`, is taken on npm by an unrelated project that also claims
+> the `nightshift` binary. Nothing of ours has ever been published under it — see #39.
+
+Until then, run from source:
 
 ```bash
 git clone https://github.com/amarjaleelbanbhan/nightshift.git
@@ -132,15 +213,20 @@ Run `nightshift` with no arguments for the interactive menu.
 | `nightshift theme apply <id> [--dry-run]` | Apply a theme to Windows Terminal (backs up first). `--dry-run` prints exactly which keys would be added or replaced and writes nothing |
 | `nightshift theme validate <file>` | Validate a theme JSON file, reporting every schema issue with its field path (exit 1 if invalid). Contrast warnings are advisory and do not fail validation |
 | `nightshift theme create` | Create a user theme by cloning an existing one. `--id`, `--name` (both required), `--from <themeId>` (default `ghost-protocol`), `--description`, `--overwrite`. A built-in id is refused under any flag |
+| `nightshift theme edit <id> --set <role>=<#RRGGBB>` | Change one or more colours of a user theme. `--set` is repeatable and takes any of the 9 `colors` roles or the 16 `ansi` ones; the new WCAG ratios are printed before the write. `--dry-run` shows the before/after and the new ratios and writes nothing. A built-in theme is refused and the clone command is suggested instead |
 | `nightshift theme remove <id>` | Remove a user-created theme. Built-in themes are refused, and so is the active theme (switch away first) |
 | `nightshift font list` | List font families installed on this system, flagging probable Nerd Fonts |
 | `nightshift font check <family>` | Report whether a font family is installed (exit 1 if it is not) |
+| `nightshift font install <path> [--yes]` | Copy a local `.ttf`/`.otf`/`.ttc` file, or a directory of them, into your per-user font directory. Prints the full proposal first and writes nothing without approval; without a TTY it writes nothing and `--yes` approves without a prompt. Does **not** write the font registry value — the finishing `reg add` command is printed |
 | `nightshift profile list` | List built-in and user profiles, with active-profile marker |
 | `nightshift profile show <id>` | Show a profile's details, including theme resolution |
 | `nightshift profile apply <id> [--dry-run]` | Apply a profile's theme to Windows Terminal (backs up first). `--dry-run` previews the change and writes nothing |
 | `nightshift profile import <file>` | Import a profile JSON file (`--overwrite` to replace an existing user profile) |
 | `nightshift profile export <id>` | Export a profile to JSON (`--output <path>`, `--overwrite`) |
 | `nightshift profile remove <id>` | Remove a user-imported profile (built-in profiles can't be removed) |
+| `nightshift shell status` | Report the detected shell, the `$PROFILE` path it resolves to, whether NIGHTSHIFT's managed block is present, and whether `starship` and a `starship.toml` were found. Read-only |
+| `nightshift shell init [--yes]` | Add or update NIGHTSHIFT's managed block in your PowerShell profile. Prints the **exact diff** and writes nothing without approval; without a TTY it writes nothing and `--yes` approves without a prompt. Backs the file up first. Does **not** write a `starship.toml` |
+| `nightshift shell remove [--yes]` | Delete NIGHTSHIFT's managed block, leaving the rest of the profile byte for byte as it was. Same diff-then-approve flow |
 | `nightshift doctor` | Diagnose environment and capability detection |
 | `nightshift backup create` | Back up the current Windows Terminal `settings.json` |
 | `nightshift backup list` | List existing backups |
@@ -255,12 +341,20 @@ file, not an excerpt, so it can be copied as-is.
   Windows Terminal substitutes a different font silently when it is not. `doctor` re-checks
   this for the active theme.
 
-Rather than writing this by hand, clone a working theme and edit it:
+Rather than writing this by hand, clone a working theme and change the colours you care about:
 
 ```bash
 nightshift theme create --id my-theme --name "My Theme" --from ghost-protocol
-nightshift theme validate "%APPDATA%\nightshift\themes\my-theme.json"
+nightshift theme edit my-theme --set primary=#65E58B --set background=#0A0D0B --dry-run
+nightshift theme edit my-theme --set primary=#65E58B --set background=#0A0D0B
+nightshift theme apply my-theme
 ```
+
+`theme edit` takes any of the nine `colors` roles or the sixteen `ansi` ones by name, refuses an
+invalid hex with the same field path `theme validate` reports, and prints the theme's WCAG
+contrast ratios *after* the change but *before* the write. Those ratios are advisory: a dim
+theme is still a valid theme, so a failing ratio is shown and the write still happens. Editing
+the file does not re-apply it — run `theme apply <id>` to see the change in Windows Terminal.
 
 You can also drop a theme JSON file into `%APPDATA%\nightshift\themes\` by hand; it shows up in
 `theme list` once it validates.
@@ -443,8 +537,59 @@ config field exists for it.
   "Nerd Font" or an "NF" token. Glyph coverage is not inspected, so a patched font under a
   different name is not detected, and a font merely *named* like one is flagged. The command's
   own output says so.
+- **`font install` copies a font file; it does not register it with Windows.** A per-user font
+  install on Windows is two steps: the file into `%LOCALAPPDATA%\Microsoft\Windows\Fonts`, and a
+  value naming it under `HKCU\Software\Microsoft\Windows NT\CurrentVersion\Fonts`. NIGHTSHIFT
+  does only the first, because the second needs `reg.exe` or a Win32 call and there is no
+  child-process execution anywhere in `src/` (and no new dependency was worth it for one write).
+  So after `font install`, `nightshift font check` and `font list` will see the family, and
+  applications that read the font registry — including Windows Terminal's font picker — may
+  not, until you run the `reg add` command the command prints, or open the font directory and
+  use Windows' own right-click **Install**. The proposal states this before you approve it, and
+  the result states it again afterwards; `font install` never reports the registration as done.
+- `font install` reads from a **local path only** — a file or a directory of font files. It
+  never downloads. One file is capped at 32 MB and one directory install at 256 font files,
+  only `.ttf`/`.otf`/`.ttc` are accepted, a path containing a `..` segment is refused (the
+  proposal has to name a path you can verify), and a file with a font extension but no readable
+  family name in its `name` table is refused rather than copied — it could not be verified
+  afterwards. Fonts are never removed, and `%WINDIR%\Fonts` (all users) is never written.
+- Font detection and installation are Windows-only; other platforms report `unsupported` rather
+  than guessing.
 - Font *installation* is not implemented. `font list`/`font check` are read-only, and font
   detection is Windows-only (other platforms report `unsupported` rather than guessing).
+- **`shell init` writes a PowerShell profile and nothing else.** `.bashrc`, `.zshrc`, `fish`,
+  Nushell and `cmd` are not implemented; a detected `SHELL` is reported and never edited, the
+  same deliberate PowerShell-only scope the completion script has.
+- **`shell init` does not configure Starship, it only initialises it.** NIGHTSHIFT neither
+  writes nor reads `starship.toml`, so if you have no Starship config your prompt gets
+  Starship's defaults, not anything derived from your NIGHTSHIFT theme. The Starship line is
+  added only when the `starship` binary is found on your PATH, and it is wrapped in a
+  `Get-Command` guard so uninstalling Starship later does nothing rather than erroring on every
+  new shell.
+- **The managed block records the active theme id at the time you run `shell init`, and nothing
+  updates it afterwards.** `theme apply` does not rewrite your profile — that would be a write
+  outside NIGHTSHIFT's config directory with no proposal shown — so `$env:NIGHTSHIFT_THEME`
+  goes stale until you re-run `nightshift shell init`.
+- **Which shell NIGHTSHIFT thinks you are using is an inference, and `shell status` prints the
+  evidence so you can disagree with it.** PowerShell is identified from `PSModulePath` (which
+  PowerShell exports to every child process), falling back to which edition already has a
+  profile file; there is no `--shell` override. Asking PowerShell for `$PROFILE` directly would
+  mean spawning a child process, which this project does nowhere. If neither signal is present
+  the command refuses rather than picking an edition, because writing the wrong edition's
+  profile produces a file no shell ever loads.
+- **`$PROFILE` is resolved from `Documents`, including OneDrive's redirected `Documents`.** If
+  Known Folder Move is on, `%OneDrive%\Documents` is preferred over `%USERPROFILE%\Documents`
+  (verified on a real machine where it is). A Documents folder redirected somewhere else again,
+  by Group Policy or a custom shell-folder registry value, is not detected — `shell status`
+  prints the path it resolved, so check it before approving.
+- **A `$PROFILE` that does not end with a newline gets one.** The block is appended as whole
+  lines, so NIGHTSHIFT adds the missing final newline, and `shell remove` leaves it behind: a
+  trailing newline it added and a blank line you wrote are the same byte, and deleting one of
+  yours would be worse. Every other byte of the file round-trips exactly.
+- **A profile containing two NIGHTSHIFT blocks, or a start marker with no end marker, is
+  refused rather than repaired.** NIGHTSHIFT cannot tell which block is its own, and editing
+  the wrong lines of a file your shell executes is the failure this whole flow exists to avoid.
+  Delete the stray markers by hand and re-run.
 - Contrast checking covers 6 color roles against the theme's own background. It does not check
   ANSI colors, color-on-color pairs, or how your actual terminal renders them (transparency,
   acrylic and font smoothing all change the real result).

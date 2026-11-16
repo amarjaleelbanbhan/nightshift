@@ -114,6 +114,99 @@ describe("theme authoring commands (built dist/index.js)", () => {
     expect(fs.existsSync(path.join(appData, "..", "evil.json"))).toBe(false);
   });
 
+  it("edits a colour, reports the new contrast ratio, and keeps the file valid", () => {
+    run(["theme", "create", "--id", "mine", "--name", "Mine", "--from", "deep-space"]);
+    const themeFile = path.join(appData, "nightshift", "themes", "mine.json");
+
+    const edited = run(["theme", "edit", "mine", "--set", "primary=#FFFFFF"]);
+    expect(edited.status).toBe(0);
+    expect(edited.stdout).toContain('Updated theme "mine" (1 colour).');
+    expect(edited.stdout).toContain("colors.primary");
+    // The ratio shown is the one for #FFFFFF, which on deep-space's background is the maximum
+    // the theme can reach - the pre-edit primary cannot produce this line.
+    expect(edited.stdout).toContain("#FFFFFF");
+    expect(edited.stdout).toContain("Contrast against background");
+    expect(JSON.parse(fs.readFileSync(themeFile, "utf8")).colors.primary).toBe("#FFFFFF");
+    expect(run(["theme", "validate", themeFile]).status).toBe(0);
+  });
+
+  it("--dry-run prints the change and writes nothing", () => {
+    run(["theme", "create", "--id", "mine", "--name", "Mine"]);
+    const themeFile = path.join(appData, "nightshift", "themes", "mine.json");
+    const before = fs.readFileSync(themeFile, "utf8");
+
+    const { stdout, status } = run([
+      "theme",
+      "edit",
+      "mine",
+      "--set",
+      "primary=#FFFFFF",
+      "--dry-run",
+    ]);
+
+    expect(status).toBe(0);
+    expect(stdout).toContain("Dry run");
+    expect(stdout).toContain("Nothing was written");
+    expect(fs.readFileSync(themeFile, "utf8")).toBe(before);
+  });
+
+  it("exits 1 for an invalid hex, naming the same field path `theme validate` names", () => {
+    run(["theme", "create", "--id", "mine", "--name", "Mine"]);
+    const themeFile = path.join(appData, "nightshift", "themes", "mine.json");
+    const before = fs.readFileSync(themeFile, "utf8");
+
+    const { stdout, stderr, status } = run(["theme", "edit", "mine", "--set", "primary=blue"]);
+    const text = stdout + stderr;
+
+    expect(status).toBe(1);
+    expect(text).toContain("colors.primary: must be a 6-digit hex color");
+    expect(fs.readFileSync(themeFile, "utf8")).toBe(before);
+  });
+
+  it("exits 1 editing a built-in and suggests cloning it instead", () => {
+    const { stderr, status } = run(["theme", "edit", "monolith", "--set", "primary=#FFFFFF"]);
+
+    expect(status).toBe(1);
+    expect(stderr).toContain("built-in theme and cannot be edited in place");
+    // The refusal is only useful with the thing to do instead, and `--from` is what does it.
+    expect(stderr).toContain("--from monolith");
+    expect(fs.existsSync(path.join(appData, "nightshift", "themes", "monolith.json"))).toBe(false);
+  });
+
+  it("exits 1 for an unknown role and for a --set with no value", () => {
+    run(["theme", "create", "--id", "mine", "--name", "Mine"]);
+
+    const unknown = run(["theme", "edit", "mine", "--set", "selectionBackground=#FFFFFF"]);
+    expect(unknown.status).toBe(1);
+    expect(unknown.stderr).toContain("is not a colour role");
+
+    const malformed = run(["theme", "edit", "mine", "--set", "primary"]);
+    expect(malformed.status).toBe(1);
+    expect(malformed.stderr).toContain("is not a role=value pair");
+  });
+
+  it("applies several --set flags in one invocation", () => {
+    run(["theme", "create", "--id", "mine", "--name", "Mine"]);
+
+    const { stdout, status } = run([
+      "theme",
+      "edit",
+      "mine",
+      "--set",
+      "background=#101010",
+      "--set",
+      "brightRed=#FF0000",
+    ]);
+
+    expect(status).toBe(0);
+    expect(stdout).toContain("(2 colours)");
+    const theme = JSON.parse(
+      fs.readFileSync(path.join(appData, "nightshift", "themes", "mine.json"), "utf8"),
+    );
+    expect(theme.colors.background).toBe("#101010");
+    expect(theme.ansi.brightRed).toBe("#FF0000");
+  });
+
   it("removes a user theme (exit 0) and refuses a built-in (exit 1)", () => {
     run(["theme", "create", "--id", "goner", "--name", "Goner"]);
 

@@ -27,9 +27,13 @@ src/
 │   │                             manager (import/export/remove, mutating)
 │   ├── config/                  NIGHTSHIFT's own config.json: paths + read/write
 │   ├── capabilities/            platform/terminal/Claude Code detection
-│   └── fonts/                   detect.ts: installed font families, read from the Windows
-│                                  font directories by parsing each file's sfnt `name` table
-│                                  (read-only; installing fonts is not implemented)
+│   ├── fonts/                   detect.ts: installed font families, read from the Windows
+│   │                              font directories by parsing each file's sfnt `name` table
+│   │                              (read-only; installing fonts is not implemented)
+│   └── shell/                   detect.ts: which PowerShell edition and which $PROFILE, plus
+│                                  Starship presence, all from filesystem evidence (no child
+│                                  process); integrate.ts: plan/execute one managed block in
+│                                  that profile (no starship.toml is written)
 ├── adapters/
 │   └── windows-terminal/        locate settings.json, merge theme into it
 ├── backup/                      generic file-snapshot backup/restore
@@ -59,6 +63,17 @@ src/
   and profile apply were two copies of this same sequence; a fix applied to one copy and not
   the other was the real hazard, not the duplication. The callers supply only the noun for the
   failure message, their own success message, and the config setter to run.
+- **A command that writes outside NIGHTSHIFT's config directory uses the `setup` structure, not
+  its own.** `buildProposal` / `renderProposal` / `execute`, where the first two perform no
+  writes, so the non-interactive path is structurally incapable of modifying the machine rather
+  than merely choosing not to. `shell init`/`shell remove` (`core/shell/integrate.ts` +
+  `cli/commands/shell.ts`) are the second user of that shape and add no second approval flow:
+  same TTY guard, same `--yes` semantics, same "nothing has been written" wording. What they
+  add, because the file they edit is shell source the user's shell *executes*, is the exact
+  line-by-line diff in the proposal — "a block will be added" is not consent to specific lines
+  of code. The edit itself is `before + block + after` over verbatim slices of the current
+  file, so preserving everything outside the managed block is a property of the construction
+  rather than of a regex.
 - **`backup/manager.ts` is generic**, not Windows-Terminal-specific: it snapshots any file path
   with metadata (reason, timestamp, original path) and restores by id. Any future adapter
   (Linux/macOS terminals, Claude Code settings) reuses it rather than reimplementing backup.

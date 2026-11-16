@@ -27,6 +27,7 @@ import {
 import { runProfileList } from "../commands/profile.js";
 import { runDoctor } from "../commands/doctor.js";
 import { runFontList, runFontCheck } from "../commands/font.js";
+import { runShellStatus, runShellInit, runShellRemove } from "../commands/shell.js";
 import { runBackupCreate, runBackupList } from "../commands/backup.js";
 import { runStatus } from "../commands/status.js";
 
@@ -118,12 +119,45 @@ async function runIntegrationsMenu(): Promise<void> {
       value: "terminal",
       hint: "planned — use Theme Studio to apply colors today",
     },
-    { label: "Shell Manager", value: "shell", hint: "planned" },
+    { label: "Shell Manager", value: "shell", hint: "PowerShell profile, Starship init" },
     { label: "Claude Code", value: "claude", hint: "planned" },
     { label: "Back", value: "back" },
   ]);
   if (!choice || choice === "back") return;
+  if (choice === "shell") {
+    await runShellMenu();
+    return;
+  }
   log.warn(PLANNED);
+}
+
+/**
+ * Editing a shell startup file is the highest blast radius in the product, so this entry hands
+ * straight to `runShellInit`/`runShellRemove`, which print the exact diff and ask for approval
+ * themselves - the menu must not become a second approval flow, and the hints name what the
+ * integration does not do (generate a starship.toml).
+ */
+async function runShellMenu(): Promise<void> {
+  const action = await promptSelect("Shell Manager", [
+    { label: "Status", value: "status", hint: "shell, profile path, Starship" },
+    {
+      label: "Add or update NIGHTSHIFT's block",
+      value: "init",
+      hint: "shows the exact diff first; no starship.toml is written",
+    },
+    { label: "Remove NIGHTSHIFT's block", value: "remove" },
+    { label: "Back", value: "back" },
+  ]);
+  if (!action || action === "back") return;
+  if (action === "status") {
+    runShellStatus();
+    return;
+  }
+  if (action === "init") {
+    await runShellInit();
+    return;
+  }
+  await runShellRemove();
 }
 
 async function runSystemMenu(): Promise<void> {

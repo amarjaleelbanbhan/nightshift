@@ -75,6 +75,30 @@ installation. **Take a backup first** (`nightshift backup create`).
 - [ ] `nightshift backup restore <id>` — it prints the destination *before* writing, and the
       restore lands.
 
+## 5. Shell integration — the highest blast radius surface
+
+`shell init` edits the file PowerShell executes on every start, and no automated suite touches
+the real `$PROFILE` (the harness repoints `USERPROFILE`, because a test that got that wrong
+would edit the developer's own shell). The byte-level properties — idempotence, exact removal,
+content either side of the block surviving — are proven mechanically in
+`tests/integration/shell-integration.test.ts`; what no harness can answer is whether PowerShell
+actually loads the file that was edited. **Copy your `$PROFILE` somewhere outside `Documents`
+first.**
+
+- [ ] `nightshift shell status` — the profile path matches what `$PROFILE` prints in that same
+      PowerShell session. If it does not, stop: the detection inferred the wrong edition or the
+      wrong `Documents` folder, and nothing below should be approved.
+- [ ] `nightshift shell init` with no `--yes` — the diff renders readably in colour, and
+      declining at the prompt writes nothing.
+- [ ] `nightshift shell init --yes`, then **open a new PowerShell window** and check
+      `$env:NIGHTSHIFT_THEME`. This is the one claim the test suite cannot make.
+- [ ] Add a line of your own both above and below the block, re-run `shell init`, and confirm
+      both survive and no second block appeared.
+- [ ] `nightshift shell remove --yes`, then diff against the copy you took: the file should be
+      byte-identical (except the added final newline if yours lacked one).
+- [ ] If you use Starship: confirm the prompt still works, and that `starship.toml` was neither
+      created nor modified.
+
 ## Recording the result
 
 Note the date, the NIGHTSHIFT version, and the Windows Terminal version in the release PR.

@@ -13,8 +13,9 @@ Phase 14 = testing/CI, Phase 15 = documentation, Phase 16 = release prep.
 **Merged foundation:** the 1.0.0 hardening cycle, PRs #2, #24 and #25, merged to `main` at
 commit `cf2df3f`
 **Current phase:** Phase 2 and the theme-engine portion of Phase 4 are **done**; Phase 3 (font
-manager) is **partially done** (detection only). Phase 15 (documentation) is in progress on this
-branch. See the per-phase sections below.
+manager) is **partially done** (detection only); Phase 6 (shell integrations) is **partially
+done** — the PowerShell-profile half ships, Starship is detection only. Phase 15 (documentation)
+is in progress on this branch. See the per-phase sections below.
 **Release version:** still `0.2.0` in `package.json`. Whether this cycle ships as `0.3.0` or
 `1.0.0` is an open maintainer decision (issue #9), and `CHANGELOG.md` is deliberately blocked on
 it rather than guessing.
@@ -31,7 +32,10 @@ for every future PR before it's opened, not just retroactively.
   "user-approved action." Needs a specific proposal shown before any write. Font *detection* is
   read-only and therefore shipped; installation did not.
 - **Starship / shell-profile integration (Phase 6)** edits shell startup files — requires
-  showing the exact diff and getting explicit approval first.
+  showing the exact diff and getting explicit approval first. The shell-profile half now ships
+  *with* that diff shown before any write (issue #16), reusing `setup`'s structure. What still
+  did not ship is generating a `starship.toml` and editing any non-PowerShell startup file,
+  both for reasons recorded in the Phase 6 section.
 - **Linux/macOS adapters (Phase 9)** cannot be tested on this machine (Windows 11 only).
 - **NIGHTSHIFT Studio (Phase 10)** is a local React+Vite app with its own HTTP server and
   security surface — a substantial build in its own right.
@@ -221,6 +225,71 @@ Merged as part of `8a2a660`.
   generation, no import of third-party scheme formats (base16, iTerm, Windows Terminal
   `schemes` entries).
 
+## Phase 6 — Shell integrations
+
+Status: **Partially done — the shell-profile half is done; Starship is detection only**
+
+`src/core/shell/detect.ts` and `src/core/shell/integrate.ts` plus
+`shell status` / `shell init` / `shell remove` (issue #16).
+
+This is the highest blast radius feature in the product — a corrupt `settings.json` costs a
+user their terminal colours, a corrupt `$PROFILE` can cost them the shell they would use to fix
+it — so the rule in this document is enforced structurally rather than by intent, the same way
+Phase 2 does it: `buildShellIntegrationPlan()` and `renderShellProposal()` perform no writes at
+all, so the non-interactive path is *incapable* of editing the startup file. On top of `setup`'s
+structure it adds the thing a file of shell source needs and a list of paths does not: the
+**exact diff**, every added and removed line marked, with the unchanged lines either side of the
+block shown as context.
+
+- **The managed block** sits between `# >>> nightshift >>>` and `# <<< nightshift <<<`. The next
+  file content is computed as `before + block + after` from verbatim slices of the current file,
+  so every byte outside that region survives by construction rather than by a regex getting the
+  right answer. Re-running replaces the block's contents instead of appending a second one, and
+  removal deletes exactly that region.
+- **Refuses rather than guesses** on two shapes that mean something already went wrong: two
+  blocks in one file, and a start marker with no end. Both are fixable by hand and
+  unrecoverable by guessing.
+- **Backs up through `src/backup/manager.ts`** — no second backup mechanism — and rolls back a
+  write it cannot verify afterwards: from the snapshot when the profile existed (passing the
+  path, so poisoned backup metadata cannot redirect the restore, #23), and by deleting the file
+  when NIGHTSHIFT created it, because `createBackup` takes no snapshot of a file that was not
+  there.
+- **No child-process execution was added.** `docs/SECURITY-MODEL.md`'s claim that there is none
+  anywhere in `src/` still holds. The two obvious implementations - asking PowerShell for
+  `$PROFILE`, and running `starship --version` - are both replaced by filesystem evidence:
+  `PSModulePath` (which PowerShell exports to every child process) identifies the edition, and
+  a PATH scan with `fs.statSync` finds the `starship` binary.
+- **Not done: generating or editing `starship.toml`.** Starship is detected and, when present,
+  initialised by the block; its appearance still comes entirely from the user's own config.
+  Doing the other half properly means a theme→Starship-module colour mapping and a TOML writer
+  with the same preserve-the-user's-file guarantees the JSONC work needed, which is its own
+  change. The proposal says so *before* approval and `shell status` says so unprompted; nothing
+  claims otherwise.
+- **Not done: any non-PowerShell startup file.** `.bashrc`/`.zshrc`/fish/Nushell are not
+  written. Same reasoning as the completion script (#19): Windows is the only supported
+  platform, so shipping an untestable editor for a startup file on a platform the product
+  disclaims is strictly worse than reporting it. A detected `SHELL` is named and left alone.
+- **A user will hit this:** the block records the active theme id at the time it is written and
+  nothing updates it afterwards. `theme apply` deliberately does not rewrite the profile - that
+  would be a write outside NIGHTSHIFT's config directory with no proposal shown - so
+  `$env:NIGHTSHIFT_THEME` goes stale until `shell init` is re-run. `README.md` says so.
+
+Evidence:
+
+- `tests/integration/shell-integration.test.ts` — 30 cases, including "prints the exact diff
+  and writes NOTHING without a TTY and without `--yes`" (asserted against both the functions and
+  the real built `dist/index.js`, because "writes nothing" is a claim about a process), two runs
+  compared byte-for-byte, removal compared byte-for-byte against the original, removal of a
+  block in the *middle* of a file, a symlinked profile, an LF-only profile, a missing profile
+  and its missing parent directory, an older version's block, both rollback paths, and a
+  refusal of a theme id that would reach PowerShell source.
+- Verified live on this machine, read-only: `shell status` reports Windows PowerShell 5.1 from
+  `PSModulePath` and resolves `$PROFILE` to **`%OneDrive%\Documents\WindowsPowerShell\...`** —
+  the OneDrive Known Folder Move case is real here, not hypothetical, and a
+  `%USERPROFILE%\Documents` assumption would have written a profile this machine never loads.
+  `shell init` with no TTY printed the full diff and created nothing (the directory still does
+  not exist).
+
 ## Phase 13 — Security and reliability (partial)
 
 Status: **Partially done**
@@ -275,10 +344,10 @@ harmless before `theme validate` existed and became a 16-error paste the moment 
 example is now the complete file, verified by extracting the JSON block straight out of
 `README.md` and running `theme validate` on it (exit `0`).
 
-## Phases 5–12, 16
+## Phases 5, 7–12, 16
 
 Status: **Not started.** See "why phases are not all attempted at once" above. In roadmap order:
-Phase 5 ASCII Art Studio, Phase 6 shell integrations, Phase 7 widget engine, Phase 8 Claude Code
+Phase 5 ASCII Art Studio, Phase 7 widget engine, Phase 8 Claude Code
 integration (detection only today, no settings read or written), Phase 9 cross-platform
 adapters, Phase 10 Studio, Phase 11 marketplace, Phase 12 additional customization, Phase 16
 release prep (blocked on the version decision in issue #9).
@@ -303,6 +372,26 @@ What still needs a human, or a machine this tool does not have:
   transparency, acrylic, or font smoothing.
 - **Nerd Font detection is a name heuristic.** Glyph coverage is never inspected, so a patched
   font under an unpatched name reads as "no" and a font merely named like one reads as "likely".
+- **`shell init --yes` was never run against the real `$PROFILE`.** Only the read-only paths
+  were (`shell status`, and `shell init` with no TTY, which printed the diff and created
+  nothing — confirmed by the directory still not existing afterwards). The writing path is
+  exercised only through a temporary `USERPROFILE`/`APPDATA`/`PATH`
+  (`tests/integration/shell-integration.test.ts`), because a test that got the environment
+  wrong would edit the developer's own shell startup file, which is exactly the damage this
+  feature has to be trusted not to do. What that harness proves is byte-level: two runs are
+  identical, removal restores the original bytes, content either side of the block survives.
+  What it cannot prove is **whether PowerShell actually loads the edited file** — that needs a
+  human to open a new shell and check `$env:NIGHTSHIFT_THEME`, and on this machine the profile
+  directory does not exist yet, so nobody has.
+- **Shell identification is an inference, not a fact.** `PSModulePath` is read rather than
+  PowerShell being asked for `$PROFILE`, because asking means a child process. It was confirmed
+  correct on this machine (Windows PowerShell 5.1, under Git Bash, with the OneDrive-redirected
+  Documents folder), which is one environment. A Documents folder redirected by Group Policy or
+  a custom shell-folder registry value is not detected at all; `shell status` prints the
+  resolved path so a user can catch that before approving.
+- **The Starship half is unverified beyond detection**, because `starship` is not installed on
+  this machine: the init line is generated from a planted fake binary in the tests, so what is
+  proven is that the line appears with the right text, not that the resulting prompt works.
 - **Font detection was verified on one machine only.** 200 families, two directories, one
   Windows 11 install. A machine with fonts registered only in the registry, or a non-Windows
   machine, is covered by `unsupported`/`unknown` reporting rather than by having been tried.

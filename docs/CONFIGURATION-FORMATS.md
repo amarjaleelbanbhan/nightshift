@@ -103,6 +103,51 @@ A non-array `schemes` becomes an empty list rather than an error, and non-object
 it are passed through untouched instead of having `.name` read off them. They are kept, not
 dropped — NIGHTSHIFT does not delete data it cannot interpret.
 
+## Shell profile (`$PROFILE`)
+
+Not a NIGHTSHIFT format — this is the user's own PowerShell script, and NIGHTSHIFT owns exactly
+one region of it:
+
+```powershell
+# >>> nightshift >>>
+# Managed by NIGHTSHIFT. Everything between these markers is replaced by
+# `nightshift shell init` and deleted by `nightshift shell remove`. Edit outside them.
+$env:NIGHTSHIFT_THEME = "ghost-protocol"
+if (Get-Command starship -ErrorAction SilentlyContinue) {
+  Invoke-Expression (&starship init powershell)
+}
+# <<< nightshift <<<
+```
+
+The markers are the contract. Everything between them is NIGHTSHIFT's and is replaced wholesale
+on the next `shell init`; everything outside them is the user's and is re-concatenated verbatim,
+so comments, blank lines, ordering and the file's own line endings all survive. The next content
+is computed as `before + block + after` from slices of the current file — preserving the rest of
+the file is a property of that construction, not of a pattern matching correctly.
+
+The Starship lines appear only when a `starship` binary is found on `PATH`, and the
+`Get-Command` guard means uninstalling Starship later degrades to doing nothing instead of
+erroring on every new shell. `$env:NIGHTSHIFT_THEME` records the active theme id **at the time
+the block was written**; nothing updates it afterwards, because `theme apply` rewriting a shell
+startup file without showing a proposal is exactly what `ROADMAP_STATUS.md` forbids.
+
+Two shapes are **refused rather than rewritten**, for the same reason the legacy `profiles`
+array is: a wrong guess here destroys user data and declining does not.
+
+- **Two managed blocks**, which an older or buggy version could have left behind. NIGHTSHIFT
+  cannot tell which one is its own.
+- **A start marker with no end marker** (or the two out of order). The region is undefined, and
+  editing the wrong lines of a file the shell executes is the failure this whole flow exists to
+  prevent.
+
+The one byte that does not round-trip: a profile that did not end with a newline gets one, and
+`shell remove` leaves it. A trailing newline NIGHTSHIFT added and a blank line the user wrote
+are the same byte, so deleting one of theirs would be the worse error.
+
+PowerShell only (`Documents\PowerShell\...` for 7+, `Documents\WindowsPowerShell\...` for 5.1,
+under OneDrive's redirected `Documents` when Known Folder Move is on). `.bashrc`/`.zshrc` are
+not written — see `README.md` "Known limitations".
+
 ## Fonts
 
 Not a configuration format — there is nothing to write. `src/core/fonts/detect.ts` reads

@@ -8,11 +8,11 @@ and shells later — not a terminal emulator or a replacement for them.
 
 This is an early (`0.4.0`) development release. It implements a real, working foundation:
 theme management (including authoring and validation) and profile management, both with safe
-apply/rollback to Windows Terminal, guided first-run setup, read-only font detection, and
-backup/restore. It does not implement the full long-term vision (marketplace, widgets, Studio,
-Claude Code integration, font *installation*, shell integration) — those are tracked honestly
-below, not advertised as done. See `ROADMAP_STATUS.md` for the detailed phase-by-phase status of
-the full 1.0.0 roadmap.
+apply/rollback to Windows Terminal, guided first-run setup, read-only font detection,
+PowerShell-profile shell integration, and backup/restore. It does not implement the full
+long-term vision (marketplace, widgets, Studio, Claude Code integration, font *installation*,
+Starship *configuration*) — those are tracked honestly below, not advertised as done. See
+`ROADMAP_STATUS.md` for the detailed phase-by-phase status of the full 1.0.0 roadmap.
 
 ## Status: Implemented / Partial / Planned
 
@@ -43,6 +43,16 @@ the full 1.0.0 roadmap.
   *active theme's* requested font is actually installed. That check exists because Windows
   Terminal silently substitutes a different font when the requested family is missing, and
   `theme apply` used to print success without mentioning it.
+- Shell integration: `shell status`, `shell init` and `shell remove` manage one clearly
+  delimited block in your PowerShell profile (`$PROFILE`), between `# >>> nightshift >>>` and
+  `# <<< nightshift <<<`. Because this edits a file your shell *executes* on every start — the
+  highest blast radius in this tool — `shell init` prints **the exact diff, line by line**,
+  backs the file up first, and writes nothing until you approve it; non-interactively it prints
+  the diff and writes nothing, and `--yes` is the only way to approve without a prompt.
+  Re-running replaces the block's contents rather than appending a second one (the file comes
+  out byte-identical), and `shell remove` deletes exactly that block, leaving the rest of your
+  profile — including your own comments — byte for byte as it was. A symlinked `$PROFILE` is
+  followed, not replaced. **It does not write a `starship.toml`** (see "Partially implemented").
 - PowerShell Tab completion (`completion powershell`), completing commands, options and -
   the part that matters - theme, profile and backup ids read from the live registries.
 - A documented exit-code contract (see "Exit codes" below) and `--no-color` / `NO_COLOR`
@@ -55,10 +65,10 @@ the full 1.0.0 roadmap.
 - Environment/capability detection (`doctor`, `status`) — reports what was actually detected,
   not what's assumed, and now also reports active profile and user-profile-directory health.
 - Interactive home menu (`nightshift` with no args), grouped into Workspace / Customization /
-  Integrations / System, with unimplemented sections clearly labeled instead of faked — Setup
-  and Fonts are now real entries there, ASCII Art Studio, Widgets, Shell Manager and Claude
-  Code are still marked `planned`. Built on `@clack/prompts`; falls back to printing status and
-  exiting if run without a real terminal (CI, pipes) instead of hanging.
+  Integrations / System, with unimplemented sections clearly labeled instead of faked — Setup,
+  Fonts and Shell Manager are now real entries there, ASCII Art Studio, Widgets, Terminal
+  Manager and Claude Code are still marked `planned`. Built on `@clack/prompts`; falls back to
+  printing status and exiting if run without a real terminal (CI, pipes) instead of hanging.
 - One-shot commands (`status`, `doctor`, `theme list`, `profile list`, `font list`,
   `backup list`) render through a shared, terminal-width-aware table/panel design system
   (`cli-table3` + `boxen`) instead of hand-built padded strings.
@@ -71,13 +81,23 @@ the full 1.0.0 roadmap.
   font directories and can tell you whether a family is present; it does **not** install,
   download or remove fonts. Nerd Font flagging is a name-based heuristic (see "Known
   limitations"). Non-Windows platforms report `unsupported` rather than guessing.
+- Shell and Starship integration: the **shell-profile half is done** (see "Implemented"); the
+  **Starship half is detection only**. NIGHTSHIFT looks for the `starship` binary on your PATH
+  (with `fs`, never by running it) and for a `starship.toml`, reports both, and — when the
+  binary is there — adds a guarded Starship init line to its managed block. It does **not**
+  generate, edit or read a `starship.toml`, so your prompt's appearance still comes entirely
+  from your own Starship config. PowerShell (both 5.1 and 7+) is the only shell written to;
+  a detected bash or zsh is reported and never edited.
 
 **Planned (not implemented — do not expect these to work)**
 
+- Generating a `starship.toml` from a NIGHTSHIFT theme. `shell init` initialises Starship if
+  you have it; it never writes its config.
+- Editing `.bashrc`/`.zshrc` or any non-PowerShell startup file.
 - Font installation (downloading and installing a font for you).
 - NIGHTSHIFT Studio (visual editor).
 - Marketplace / community registry.
-- Widget system, ASCII Art Studio, shell prompt adapters (Starship integration).
+- Widget system, ASCII Art Studio.
 - Linux/macOS terminal adapters (Ghostty, Kitty, iTerm2, GNOME Terminal).
 
 ## Requirements
@@ -141,6 +161,9 @@ Run `nightshift` with no arguments for the interactive menu.
 | `nightshift profile import <file>` | Import a profile JSON file (`--overwrite` to replace an existing user profile) |
 | `nightshift profile export <id>` | Export a profile to JSON (`--output <path>`, `--overwrite`) |
 | `nightshift profile remove <id>` | Remove a user-imported profile (built-in profiles can't be removed) |
+| `nightshift shell status` | Report the detected shell, the `$PROFILE` path it resolves to, whether NIGHTSHIFT's managed block is present, and whether `starship` and a `starship.toml` were found. Read-only |
+| `nightshift shell init [--yes]` | Add or update NIGHTSHIFT's managed block in your PowerShell profile. Prints the **exact diff** and writes nothing without approval; without a TTY it writes nothing and `--yes` approves without a prompt. Backs the file up first. Does **not** write a `starship.toml` |
+| `nightshift shell remove [--yes]` | Delete NIGHTSHIFT's managed block, leaving the rest of the profile byte for byte as it was. Same diff-then-approve flow |
 | `nightshift doctor` | Diagnose environment and capability detection |
 | `nightshift backup create` | Back up the current Windows Terminal `settings.json` |
 | `nightshift backup list` | List existing backups |
@@ -445,6 +468,39 @@ config field exists for it.
   own output says so.
 - Font *installation* is not implemented. `font list`/`font check` are read-only, and font
   detection is Windows-only (other platforms report `unsupported` rather than guessing).
+- **`shell init` writes a PowerShell profile and nothing else.** `.bashrc`, `.zshrc`, `fish`,
+  Nushell and `cmd` are not implemented; a detected `SHELL` is reported and never edited, the
+  same deliberate PowerShell-only scope the completion script has.
+- **`shell init` does not configure Starship, it only initialises it.** NIGHTSHIFT neither
+  writes nor reads `starship.toml`, so if you have no Starship config your prompt gets
+  Starship's defaults, not anything derived from your NIGHTSHIFT theme. The Starship line is
+  added only when the `starship` binary is found on your PATH, and it is wrapped in a
+  `Get-Command` guard so uninstalling Starship later does nothing rather than erroring on every
+  new shell.
+- **The managed block records the active theme id at the time you run `shell init`, and nothing
+  updates it afterwards.** `theme apply` does not rewrite your profile — that would be a write
+  outside NIGHTSHIFT's config directory with no proposal shown — so `$env:NIGHTSHIFT_THEME`
+  goes stale until you re-run `nightshift shell init`.
+- **Which shell NIGHTSHIFT thinks you are using is an inference, and `shell status` prints the
+  evidence so you can disagree with it.** PowerShell is identified from `PSModulePath` (which
+  PowerShell exports to every child process), falling back to which edition already has a
+  profile file; there is no `--shell` override. Asking PowerShell for `$PROFILE` directly would
+  mean spawning a child process, which this project does nowhere. If neither signal is present
+  the command refuses rather than picking an edition, because writing the wrong edition's
+  profile produces a file no shell ever loads.
+- **`$PROFILE` is resolved from `Documents`, including OneDrive's redirected `Documents`.** If
+  Known Folder Move is on, `%OneDrive%\Documents` is preferred over `%USERPROFILE%\Documents`
+  (verified on a real machine where it is). A Documents folder redirected somewhere else again,
+  by Group Policy or a custom shell-folder registry value, is not detected — `shell status`
+  prints the path it resolved, so check it before approving.
+- **A `$PROFILE` that does not end with a newline gets one.** The block is appended as whole
+  lines, so NIGHTSHIFT adds the missing final newline, and `shell remove` leaves it behind: a
+  trailing newline it added and a blank line you wrote are the same byte, and deleting one of
+  yours would be worse. Every other byte of the file round-trips exactly.
+- **A profile containing two NIGHTSHIFT blocks, or a start marker with no end marker, is
+  refused rather than repaired.** NIGHTSHIFT cannot tell which block is its own, and editing
+  the wrong lines of a file your shell executes is the failure this whole flow exists to avoid.
+  Delete the stray markers by hand and re-run.
 - Contrast checking covers 6 color roles against the theme's own background. It does not check
   ANSI colors, color-on-color pairs, or how your actual terminal renders them (transparency,
   acrylic and font smoothing all change the real result).

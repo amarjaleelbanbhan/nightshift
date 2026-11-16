@@ -288,7 +288,7 @@ memory-exhaustion path. The *conclusion* no longer holds, for three reasons:
    permanently and unfixably flagged — a dependency the advisory database will never clear.
 2. We have no way to prove to a downstream consumer that we don't hit the vulnerable path.
    They run `npm audit` on their tree, see a **high-severity finding in a runtime dependency
-   of nightshift-cli**, and that is the end of the conversation.
+   of nightshift-terminal**, and that is the end of the conversation.
 3. The upgrade cost was estimated as "every schema and parse call site". Measured, it is far
    smaller: 3 schema files, 2 `.error.issues` consumers (`profiles/manager.ts:52`,
    `profiles/registry.ts:98`), and **zero** tests that assert on error shape (every schema

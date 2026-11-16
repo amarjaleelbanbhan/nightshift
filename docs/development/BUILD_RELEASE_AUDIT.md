@@ -67,7 +67,7 @@ $ npm install "$PKGDIR/$TARBALL"
 16 packages are looking for funding
 found 0 vulnerabilities
 
-$ node node_modules/nightshift-cli/dist/index.js --version
+$ node node_modules/nightshift-terminal/dist/index.js --version
 0.2.0
 EXIT=0
 
@@ -90,7 +90,7 @@ under `node_modules`. It does not break here, and the arithmetic is worth record
   `dist/cli/version.js`).
 - `__dirname` = `<pkg>/dist/cli`; `../../package.json` = `<pkg>/package.json`.
 - In the repo that is `D:\CTP\package.json`; in an install it is
-  `<testdir>/node_modules/nightshift-cli/package.json`. **Both are the package's own manifest.**
+  `<testdir>/node_modules/nightshift-terminal/package.json`. **Both are the package's own manifest.**
 
 `package.json` is included in the tarball by npm unconditionally regardless of `files`, so the
 file this depends on can never be excluded by a `files` edit. The two-level climb is load-bearing
@@ -294,7 +294,7 @@ reflow only — no logic changed, and the 268-test suite is unchanged by it.
 
 | Area | State | Verdict |
 |---|---|---|
-| Version | `0.2.0`, never published. npm name `nightshift-cli` **unverified as available** — not checked, since checking registry availability is harmless but claiming it without checking is not | Needs a human to confirm the name |
+| Version | `0.2.0`, never published. npm name `nightshift-cli` **unverified as available** — not checked, since checking registry availability is harmless but claiming it without checking is not | **Resolved, badly: the name was NOT available.** `nightshift-cli@0.2.0` is an unrelated published package by a different author, which also declares `bin: nightshift`. Renamed to `nightshift-terminal` (#39) |
 | Versioning scheme | SemVer, pre-1.0. Under 0.x a minor bump may carry breaking changes, which is correct for a tool whose config schema is still `"1.0"` and whose command surface is still growing | Sound |
 | Changelog | `CHANGELOG.md` exists. This wave's work is **not yet in it** — it is a large unreleased change set, and whether it is `0.3.0` or `1.0.0` is `planner-architect`'s call, not this agent's | **Open, blocking a release** |
 | Tagging | **No tags exist** (`git tag` → empty). No convention established | Needs a decision; `v0.2.0` style is proposed in RELEASE_CHECKLIST.md |
@@ -309,7 +309,7 @@ reflow only — no logic changed, and the 268-test suite is unchanged by it.
 
 1. A human decision on the version number for this change set, and a `CHANGELOG.md` entry.
 2. `repository`, `bugs`, and `homepage` in `package.json`.
-3. Confirmation that `nightshift-cli` is available on the npm registry.
+3. ~~Confirmation that `nightshift-cli` is available on the npm registry.~~ **Checked: it is not.** Taken by an unrelated project; renamed to `nightshift-terminal` (#39).
 4. An npm account with publish rights and 2FA, authenticated locally.
 5. A human running `npm publish`. Nothing in this repo does it automatically, by design.
 

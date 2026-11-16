@@ -89,7 +89,17 @@ the full 1.0.0 roadmap.
 
 ## Installation
 
-Not yet published to npm. Run from source:
+Not yet published. When it is, the package will be **`nightshift-terminal`** and the command
+will still be `nightshift`:
+
+```bash
+npm install -g nightshift-terminal
+```
+
+> The obvious name, `nightshift-cli`, is taken on npm by an unrelated project that also claims
+> the `nightshift` binary. Nothing of ours has ever been published under it — see #39.
+
+Until then, run from source:
 
 ```bash
 git clone https://github.com/amarjaleelbanbhan/nightshift.git

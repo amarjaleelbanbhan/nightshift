@@ -142,6 +142,8 @@ path, a command, or any other sink. See `docs/development/SECURITY_AUDIT.md` F-2
 | Backup id (CLI arg to `restore <id>`) | `resolveSafePath` traversal guard |
 | Windows Terminal `settings.json` | Parsed as JSON, must be a non-array object; element shapes not assumed; unrelated keys preserved, never executed |
 | Font path (CLI arg to `font install <path>`) | `..` segments refused, symlinked source refused, `.ttf`/`.otf`/`.ttc` only, 32 MB per file and 256 files per directory install checked via `stat` before any read, must declare a family in its sfnt `name` table, destination `resolveSafePath` under `%LOCALAPPDATA%\Microsoft\Windows\Fonts` + `assertNotSymlink`, written with `atomicWriteFileSync` |
+| The user's PowerShell `$PROFILE` (read and spliced by `shell init`/`shell remove`) | 1 MB size cap (`MAX_SHELL_PROFILE_BYTES`) checked via `stat` before the read; path built with `resolveSafePath` under the resolved `Documents` directory; a symlink is *followed* (`realpathSync`) so the write lands on the real file instead of renaming over the link (#27); two managed blocks or an unterminated one are refused, not repaired; content outside the block is never parsed, only re-concatenated verbatim |
+| `config.json`'s `activeThemeId`, when it reaches the managed block | Re-validated against `[a-z0-9-]+` and refused if it fails |
 
 No path in 0.2.0 executes code from a theme, profile, or imported file. There is no network
 call and no child-process execution anywhere in `src/` (verified by grep).
@@ -153,3 +155,20 @@ command copies the file and reports plainly — in the proposal, before approval
 the result — that registration did not happen, printing the `reg add` command for the user to
 run themselves. A font *file* is never parsed beyond its `name` table and is never executed;
 the bytes are copied verbatim.
+**Shell integration is deliberately bounded by that last sentence, and is the one place where
+NIGHTSHIFT writes code rather than data.** The managed block in `$PROFILE` is PowerShell source
+that the user's shell executes on every start, so two rules apply that do not apply elsewhere:
+
+- **Nothing is interpolated into it unvalidated.** The only value that reaches the block is
+  `activeThemeId`, which is re-checked against the theme schema's own `[a-z0-9-]+` shape in
+  `core/shell/integrate.ts` and refused rather than escaped if it fails. `config.json` is a
+  hand-editable file on disk, so "the theme schema validated it" is not a property of the file
+  that is actually there. Writing a shell quoter instead would be a worse answer: there is no
+  legitimate reason for a theme id to need quoting.
+- **Nothing is executed to build it.** Asking PowerShell for `$PROFILE` and running
+  `starship --version` are the two obvious implementations and both are child processes.
+  Instead, the shell edition is read off `PSModulePath` (which PowerShell exports to every
+  child process it starts) and Starship is found by scanning `PATH` with `fs.statSync`. The
+  `starship` binary itself is never read or executed; its presence only decides whether the
+  block gets a `Get-Command`-guarded init line. `starship.toml` is never read or written at
+  all.

@@ -85,6 +85,20 @@ vi.mock("../../src/cli/commands/font.js", () => ({
   runFontList: stub("font-list"),
   runFontCheck: vi.fn((family: string) => calls.push(`font-check:${family}`)),
 }));
+vi.mock("../../src/cli/commands/shell.js", () => ({
+  runShellStatus: stub("shell-status"),
+  // Both writing paths are async and ask for approval themselves; the menu must hand straight
+  // to them rather than becoming a second approval flow, so what is asserted here is only that
+  // it dispatches them.
+  runShellInit: vi.fn(() => {
+    calls.push("shell-init");
+    return Promise.resolve();
+  }),
+  runShellRemove: vi.fn(() => {
+    calls.push("shell-remove");
+    return Promise.resolve();
+  }),
+}));
 vi.mock("../../src/cli/commands/backup.js", () => ({
   runBackupCreate: stub("backup-create"),
   runBackupList: stub("backup-list"),
@@ -157,6 +171,9 @@ describe("interactive home dispatch", () => {
     ["system fonts list", ["system", "fonts", "list"], "font-list"],
     ["customization theme list", ["customization", "theme", "list"], "theme-list"],
     ["customization profile list", ["customization", "profile", "list"], "profile-list"],
+    ["integrations shell status", ["integrations", "shell", "status"], "shell-status"],
+    ["integrations shell init", ["integrations", "shell", "init"], "shell-init"],
+    ["integrations shell remove", ["integrations", "shell", "remove"], "shell-remove"],
   ])("routes %s to its command", async (_label, script, expected) => {
     // `status` always runs once at session open, so the assertion is on membership rather
     // than on the whole call list.
@@ -210,6 +227,9 @@ describe("interactive home dispatch", () => {
     ["customization", ["customization", "back"]],
     ["system", ["system", "back"]],
     ["integrations", ["integrations", "back"]],
+    // The Shell Manager submenu edits a shell startup file, so a `back` that dispatched
+    // anything would be the worst possible place for that bug.
+    ["integrations shell", ["integrations", "shell", "back"]],
   ])("`back` in the %s menu dispatches nothing", async (_label, script) => {
     // Only the opening status call and the closing outro - no command ran in between.
     expect(await session(...script)).toEqual(["status", "outro"]);
@@ -237,8 +257,8 @@ describe("interactive home dispatch", () => {
   it.each([
     ["customization widgets", ["customization", "widgets"]],
     ["customization ascii", ["customization", "ascii"]],
-    ["integrations shell", ["integrations", "shell"]],
     ["integrations claude", ["integrations", "claude"]],
+    ["integrations terminal", ["integrations", "terminal"]],
   ])("labels %s as planned instead of dispatching it", async (_label, script) => {
     // The warning is the whole behaviour: a planned section must say so, not silently do
     // nothing (which reads as a broken menu) and not dispatch something.

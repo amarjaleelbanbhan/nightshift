@@ -115,6 +115,11 @@ describe("nightshift completion powershell", () => {
     // completion values - the same answer `theme validate <file>` gets, for the same reason.
     expect(values.get("font install")).toBe("");
     expect(values.get("theme list")).toBe("");
+    // `shell init`/`shell remove` take no positional argument at all, so there is nothing for
+    // completion to offer beyond their options - and nothing is offered.
+    expect(values.get("shell init")).toBe("");
+    expect(values.get("shell remove")).toBe("");
+    expect(values.get("shell status")).toBe("");
     // Every command in the tree is in the table, including the root.
     expect(values.has("")).toBe(true);
   });

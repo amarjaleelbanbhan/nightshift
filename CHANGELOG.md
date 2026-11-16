@@ -85,6 +85,61 @@ All notable changes to this project are documented here.
   network call anywhere in `src/`, and replaced the shown-proposal consent flow with a browser
   click. The actual user value — change a colour, see whether it is still readable — needed no
   server.
+- `nightshift shell status`, `nightshift shell init [--yes]` and `nightshift shell remove
+  [--yes]` — shell integration for PowerShell, and the first thing NIGHTSHIFT writes into a
+  file that the user's shell *executes*. `shell init` manages one clearly delimited block in
+  `$PROFILE`, between `# >>> nightshift >>>` and `# <<< nightshift <<<`, containing
+  `$env:NIGHTSHIFT_THEME` and — only when the `starship` binary is on PATH — a guarded Starship
+  init line.
+
+  This is the highest blast radius change in the product: a corrupt `settings.json` costs a
+  user their terminal colours, a corrupt `$PROFILE` can cost them the shell they would use to
+  fix it. So it reuses `setup`'s and `font install`'s proposal-then-approve structure rather
+  than inventing a third one — `buildShellIntegrationPlan` and `renderShellProposal` perform no
+  writes at all, so the non-interactive path is *structurally* unable to touch the file — and
+  adds the one thing those two did not need: **the exact diff**, every added and removed line
+  marked, with the unchanged lines around the block shown too, because the consent being asked
+  for is consent to specific lines of shell source. Without a TTY it prints the diff and writes
+  nothing; `--yes` is the only non-interactive approval. The file is backed up through the
+  existing engine in `src/backup/manager.ts` first, and a write that cannot be verified
+  afterwards is rolled back — from the snapshot when the profile existed, and by deleting the
+  file when NIGHTSHIFT created it, since there is no snapshot of a file that was not there.
+
+  The managed block is **idempotent and exactly removable**: the next content is computed as
+  `before + block + after` from verbatim slices of the current file, so re-running replaces the
+  block's contents instead of appending a second one (asserted by running the command twice and
+  comparing bytes), `shell remove` deletes exactly that region and leaves the user's own
+  content and comments byte for byte as they were, and the file's own line endings are
+  preserved. A file with two blocks or an unterminated one is refused rather than repaired.
+
+  Handled explicitly, not assumed: a startup file that does not exist (created, with its parent
+  directory), one that is empty, one that is a symlink (followed, as `theme apply` does for a
+  symlinked `settings.json` — #27), one that already holds an older version's block, and a
+  `Documents` folder redirected by OneDrive's Known Folder Move (verified on a real machine
+  where it is).
+
+  **It does not configure Starship.** Starship is *detected* — the binary by scanning PATH with
+  `fs`, the config by looking for `starship.toml` — and reported. Generating a `starship.toml`
+  from a NIGHTSHIFT theme is not implemented, and both the proposal (before approval) and
+  `shell status` say so. **It writes PowerShell profiles only**; a detected bash or zsh is
+  reported and never edited, the same deliberate scope the completion script has (#19).
+
+  Nothing is executed to achieve any of this: there is still no child-process execution
+  anywhere in `src/`. Asking PowerShell for `$PROFILE` and running `starship --version` are
+  both replaced by filesystem evidence, and `shell status` prints the evidence it used so the
+  user can disagree with it.
+
+- The interactive **Shell Manager** menu entry is now real instead of `planned`, and hands
+  straight to the same approval flow rather than becoming a second one.
+
+### Security
+
+- `MAX_SHELL_PROFILE_BYTES` (1 MB) in `src/security/limits.ts` caps the startup file NIGHTSHIFT
+  will read and splice, checked with `stat` before the read.
+- NIGHTSHIFT's own `activeThemeId` is re-validated against `[a-z0-9-]+` before it is
+  interpolated into the managed block, and a value that fails is refused rather than escaped.
+  `config.json` is hand-editable and the block is PowerShell source the shell runs on every
+  start, so "the theme schema validates it" is not a property of the file on disk.
 
 ## [0.4.0] - 2026-11-15
 

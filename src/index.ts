@@ -49,6 +49,7 @@ const profileModule = () => import("./cli/commands/profile.js");
 const doctorModule = () => import("./cli/commands/doctor.js");
 const backupModule = () => import("./cli/commands/backup.js");
 const fontModule = () => import("./cli/commands/font.js");
+const shellModule = () => import("./cli/commands/shell.js");
 const completionModule = () => import("./cli/commands/completion.js");
 
 program
@@ -184,6 +185,34 @@ font
   .action(async (sourcePath: string, options: { yes?: boolean }) =>
     (await fontModule()).runFontInstall(sourcePath, options),
   );
+
+const shell = program
+  .command("shell")
+  .description("Integrate NIGHTSHIFT with your shell's startup file")
+  .addHelpText(
+    "after",
+    "\nPowerShell is the only shell written to: Windows is NIGHTSHIFT's only supported platform,\n" +
+      "so editing a .bashrc nobody can test here would risk a startup file on a platform the\n" +
+      "product does not claim. `shell status` reports a detected bash or zsh without writing it.\n",
+  );
+shell
+  .command("status")
+  .description("Report the detected shell, its startup file, and whether Starship is installed")
+  .action(async () => (await shellModule()).runShellStatus());
+shell
+  .command("init")
+  .description(
+    "Add or update NIGHTSHIFT's managed block in your shell profile: show the exact diff, then write it on approval",
+  )
+  .option("--yes", "accept the proposal without a prompt (required in non-interactive shells)")
+  .action(async (options: { yes?: boolean }) => (await shellModule()).runShellInit(options));
+shell
+  .command("remove")
+  .description(
+    "Delete NIGHTSHIFT's managed block from your shell profile, leaving the rest of the file untouched",
+  )
+  .option("--yes", "accept the proposal without a prompt (required in non-interactive shells)")
+  .action(async (options: { yes?: boolean }) => (await shellModule()).runShellRemove(options));
 
 const backup = program.command("backup").description("Back up terminal configuration");
 backup

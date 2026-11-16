@@ -19,6 +19,13 @@ export const MAX_JSON_FILE_BYTES = 64 * 1024;
  * cap is still needed because the file is read into memory to be written atomically.
  */
 export const MAX_FONT_FILE_BYTES = 32 * 1024 * 1024;
+ * Cap on a shell startup file `shell init`/`shell remove` will edit. Separate from the JSON cap
+ * because this is the user's own hand-written file, not NIGHTSHIFT data: a long-lived
+ * `$PROFILE` with a decade of aliases in it is still only a few KB, so 1 MB refuses nothing
+ * real, while a cap is still needed because the whole file is read into memory to have one
+ * block spliced into it.
+ */
+export const MAX_SHELL_PROFILE_BYTES = 1024 * 1024;
 
 export class FileTooLargeError extends Error {
   constructor(filePath: string, size: number) {

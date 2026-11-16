@@ -101,6 +101,9 @@ describe("nightshift completion powershell", () => {
     expect(values.get("theme apply")).toBe("theme");
     expect(values.get("theme preview")).toBe("theme");
     expect(values.get("theme remove")).toBe("theme");
+    // `theme edit <id>` completes theme ids with no completion change at all: the mapping is
+    // derived from the argument's name, so a new `theme <verb> <id>` is covered by construction.
+    expect(values.get("theme edit")).toBe("theme");
     expect(values.get("profile apply")).toBe("profile");
     expect(values.get("profile show")).toBe("profile");
     expect(values.get("profile export")).toBe("profile");

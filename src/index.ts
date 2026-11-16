@@ -105,6 +105,22 @@ theme
     }) => (await themeModule()).runThemeCreate(options),
   );
 theme
+  .command("edit <id>")
+  .description("Change one or more colours of a user theme")
+  // Repeatable rather than one flag per role: changing a background usually means changing the
+  // foreground with it, and two runs would mean two writes and two contrast reports for one
+  // edit. Commander's collect idiom, with [] as the default so `set` is always an array.
+  .option(
+    "--set <role=value>",
+    "colour role and its new hex value, e.g. primary=#1A2B3C (repeatable)",
+    (value: string, previous: string[]) => [...previous, value],
+    [],
+  )
+  .option("--dry-run", "show the change and the new contrast ratios, and write nothing")
+  .action(async (id: string, options: { set?: string[]; dryRun?: boolean }) =>
+    (await themeModule()).runThemeEdit(id, options),
+  );
+theme
   .command("remove <id>")
   .description("Remove a user-created theme")
   .action(async (id: string) => (await themeModule()).runThemeRemove(id));
